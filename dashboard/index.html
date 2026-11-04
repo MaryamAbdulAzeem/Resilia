@@ -2,290 +2,537 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Heat-Stress Monitor</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Qaiz · Heat-Stress Control Room</title>
+
+<!-- Inter font (falls back to the system font without internet) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
 
 <!-- Leaflet: free map library. Needs internet; the page still works without it. -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <style>
-  /* ---- Colours (light mode, then dark mode) ---- */
+  /* =========================================================================
+     Theme: dark "control room". Change colours here and they apply everywhere.
+     Status colours are always paired with an icon + word (never colour alone).
+     ========================================================================= */
   :root {
-    --bg: #f4f4f2;
-    --surface: #fcfcfb;
-    --border: #e2e2de;
-    --text: #1b1b1a;
-    --text-2: #55554f;
-    --muted: #7a7a73;
-    --accent: #1f5fbf;
-    /* Status colours: always paired with an icon + label, never colour alone */
-    --green: #0ca30c;
-    --yellow: #fab219;
-    --red: #d03b3b;
-    color-scheme: light;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #111110;
-      --surface: #1a1a19;
-      --border: #2e2e2c;
-      --text: #ededea;
-      --text-2: #b5b5ae;
-      --muted: #8a8a83;
-      --accent: #6fa3f0;
-      color-scheme: dark;
-    }
+    --bg: #060b17;
+    --panel: #0f1a2e;
+    --panel-hi: #14223d;
+    --line: rgba(148, 163, 184, 0.13);
+    --line-2: rgba(148, 163, 184, 0.24);
+    --text: #e7eef9;
+    --text-2: #a7b4c8;
+    --muted: #7081a0;
+    --accent: #4f8cff;
+    --accent-2: #2dd4bf;
+
+    --green: #22c55e;   --green-text: #4ade80;   --green-rgb: 34, 197, 94;
+    --yellow: #f5b82e;  --yellow-text: #fcd34d;  --yellow-rgb: 245, 184, 46;
+    --red: #ff4d5e;     --red-text: #ff8a96;     --red-rgb: 255, 77, 94;
+    --blue-rgb: 79, 140, 255;
+
+    --radius: 16px;
+    --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    --font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color-scheme: dark;
   }
 
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   body {
     margin: 0;
-    padding: 20px clamp(16px, 3vw, 32px) 40px;
-    background: var(--bg);
+    min-height: 100vh;
     color: var(--text);
-    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font: 14px/1.5 var(--font);
+    -webkit-font-smoothing: antialiased;
+    background:
+      radial-gradient(1100px 600px at 8% -10%, rgba(var(--blue-rgb), 0.14), transparent 60%),
+      radial-gradient(900px 520px at 105% 0%, rgba(45, 212, 191, 0.07), transparent 60%),
+      var(--bg);
+    background-attachment: fixed;
   }
-  .wrap { max-width: 1280px; margin: 0 auto; }
+  .wrap { max-width: 1400px; margin: 0 auto; padding: 0 clamp(16px, 3vw, 32px) 48px; }
+  .num { font-variant-numeric: tabular-nums; }
 
   /* ---- Header ---- */
-  header {
-    display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px;
-    justify-content: space-between; margin-bottom: 16px;
+  .topbar {
+    position: sticky; top: env(safe-area-inset-top, 0px); z-index: 900;
+    background: rgba(6, 11, 23, 0.78);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--line);
   }
-  h1 { font-size: 22px; margin: 0; letter-spacing: -0.01em; }
-  .subtitle { color: var(--text-2); margin: 2px 0 0; }
-  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+  .topbar-inner {
+    max-width: 1400px; margin: 0 auto; padding: 12px clamp(16px, 3vw, 32px);
+    display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; justify-content: space-between;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand-logo { filter: drop-shadow(0 0 12px rgba(255, 92, 92, 0.45)); flex: none; }
+  .brand-name { font-size: 20px; font-weight: 800; letter-spacing: 0.06em; line-height: 1.1; }
+  .brand-tag { color: var(--muted); font-size: 12px; font-weight: 500; letter-spacing: 0.02em; }
+
+  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 
   .switch {
-    display: inline-flex; border: 1px solid var(--border); border-radius: 10px;
-    background: var(--surface); padding: 3px;
+    display: inline-flex; padding: 3px; border-radius: 12px;
+    background: rgba(255, 255, 255, 0.04); border: 1px solid var(--line);
   }
   .switch button {
-    font: inherit; border: 0; background: transparent; color: var(--text-2);
-    padding: 7px 14px; border-radius: 7px; cursor: pointer;
+    font: inherit; font-size: 13px; font-weight: 600; border: 0; background: transparent;
+    color: var(--text-2); padding: 7px 14px; border-radius: 9px; cursor: pointer;
+    transition: background-color .25s, color .25s, box-shadow .25s;
   }
-  .switch button[aria-pressed="true"] { background: var(--accent); color: #fff; font-weight: 600; }
-  .switch button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .switch button:hover { color: var(--text); }
+  .switch button[aria-pressed="true"] {
+    background: linear-gradient(180deg, #5b95ff, #3f74e6); color: #fff;
+    box-shadow: 0 0 18px rgba(var(--blue-rgb), 0.45);
+  }
 
-  .status { color: var(--muted); font-size: 13px; }
-  .demo-badge {
-    font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px;
-    border: 1px solid var(--accent); color: var(--accent);
+  .pill {
+    display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px;
+    border-radius: 999px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.04);
+    font-size: 12px; font-weight: 700; letter-spacing: 0.08em; color: var(--text-2); white-space: nowrap;
   }
-  [hidden] { display: none !important; }
-  .status.warn { color: var(--red); font-weight: 600; }
+  .live-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); position: relative; }
+  .live.is-live { color: var(--green-text); border-color: rgba(var(--green-rgb), 0.35); }
+  .live.is-live .live-dot { background: var(--green); box-shadow: 0 0 10px var(--green); }
+  .live.is-live .live-dot::after {
+    content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--green);
+    animation: ping 1.8s cubic-bezier(0, 0, .2, 1) infinite;
+  }
+  .live.is-warn { color: var(--yellow-text); border-color: rgba(var(--yellow-rgb), 0.35); }
+  .live.is-warn .live-dot { background: var(--yellow); }
+  .live.is-down { color: var(--red-text); border-color: rgba(var(--red-rgb), 0.35); }
+  .live.is-down .live-dot { background: var(--red); }
 
-  /* ---- Summary tiles ---- */
-  .summary {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-    gap: 12px; margin-bottom: 16px;
-  }
-  .tile {
-    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
-    padding: 12px 16px; display: flex; align-items: center; gap: 12px;
-  }
-  .tile .num { font-size: 30px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
-  .tile .lbl { color: var(--text-2); }
+  .clock { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.15; }
+  .clock-time { font-size: 18px; font-weight: 700; letter-spacing: 0.02em; font-variant-numeric: tabular-nums; }
+  .clock-date { font-size: 11px; color: var(--muted); font-weight: 500; }
 
-  /* ---- Map + weather ---- */
-  .top {
-    display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
-    gap: 16px; margin-bottom: 16px;
+  .btn-pill {
+    font: inherit; font-size: 12.5px; font-weight: 600; height: 34px; padding: 0 12px; border-radius: 999px;
+    cursor: pointer; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.04); color: var(--text);
+    transition: border-color .2s, background-color .2s;
   }
-  @media (max-width: 860px) { .top { grid-template-columns: 1fr; } }
+  .btn-pill:hover { border-color: var(--line-2); background: rgba(255, 255, 255, 0.07); }
+  .btn-pill.locked { color: var(--red-text); border-color: rgba(var(--red-rgb), 0.5); animation: softPulse 2s ease-in-out infinite; }
+  .demo-badge { color: #9cc0ff; border-color: rgba(var(--blue-rgb), 0.45); background: rgba(var(--blue-rgb), 0.1); }
+
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .statusbar {
+    display: flex; align-items: center; gap: 8px; margin: 14px 0 18px; font-size: 13px; color: var(--muted);
+  }
+  .statusbar.warn { color: var(--red-text); font-weight: 600; }
+  .statusbar::before { content: "●"; font-size: 9px; color: currentColor; opacity: .8; }
+
+  /* ---- KPI tiles ---- */
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; margin-bottom: 18px; }
+  .kpi {
+    --rgb: var(--blue-rgb);
+    position: relative; overflow: hidden; border-radius: var(--radius); padding: 18px 20px;
+    border: 1px solid rgba(var(--rgb), 0.28);
+    background:
+      radial-gradient(420px 160px at 0% 0%, rgba(var(--rgb), 0.22), transparent 70%),
+      linear-gradient(180deg, var(--panel-hi), var(--panel));
+    box-shadow: var(--shadow);
+    display: grid; grid-template-columns: auto 1fr; gap: 4px 16px; align-items: center;
+  }
+  .kpi-RED { --rgb: var(--red-rgb); }
+  .kpi-YELLOW { --rgb: var(--yellow-rgb); }
+  .kpi-GREEN { --rgb: var(--green-rgb); }
+  .kpi-icon {
+    grid-row: span 2; width: 52px; height: 52px; border-radius: 14px; display: grid; place-items: center;
+    font-size: 24px; font-weight: 800; color: rgb(var(--rgb));
+    background: rgba(var(--rgb), 0.14); border: 1px solid rgba(var(--rgb), 0.35);
+    box-shadow: 0 0 24px rgba(var(--rgb), 0.25), inset 0 0 12px rgba(var(--rgb), 0.12);
+  }
+  .kpi-value { font-size: 40px; font-weight: 800; line-height: 1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .kpi-value small { font-size: 15px; color: var(--muted); font-weight: 600; letter-spacing: 0; margin-left: 4px; }
+  .kpi-label { color: var(--text-2); font-size: 13px; font-weight: 600; }
+  .kpi.hot { animation: kpiGlow 2.2s ease-in-out infinite; }
+
+  /* ---- Panels ---- */
   .panel {
-    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
-    padding: 14px 16px;
+    background: linear-gradient(180deg, rgba(20, 34, 61, 0.92), rgba(13, 22, 40, 0.92));
+    border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px 18px;
   }
-  .panel h2 { font-size: 15px; margin: 0 0 10px; }
-  #map { height: 420px; border-radius: 8px; background: var(--bg); }
-  /* Site labels on the map: solid background and clear text so they stay readable */
-  .leaflet-tooltip.site-label {
-    background: #ffffff; color: #1b1b1a; border: 1px solid #b9b9b2; border-radius: 6px;
-    padding: 3px 8px; font-size: 12px; line-height: 1.35; box-shadow: 0 1px 3px rgba(0,0,0,.18);
+  .panel-title {
+    margin: 0 0 12px; font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--text-2); display: flex; align-items: center; gap: 8px;
   }
-  .site-label-name { font-weight: 700; font-size: 13px; }
-  .map-fallback { padding: 40px 16px; color: var(--muted); text-align: center; }
-  .note { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
+  .panel-title .count { color: var(--muted); font-weight: 600; letter-spacing: 0.04em; }
+  .note { color: var(--muted); font-size: 12px; margin: 10px 0 0; }
 
-  .site { padding: 10px 0; border-top: 1px solid var(--border); }
-  .site:first-of-type { border-top: 0; padding-top: 0; }
-  .site-name { font-weight: 600; display: flex; justify-content: space-between; gap: 8px; }
-  .site-wbgt { font-variant-numeric: tabular-nums; }
-  .site-detail { color: var(--text-2); font-size: 13px; }
+  .top { display: grid; grid-template-columns: minmax(0, 2.1fr) minmax(0, 1fr); gap: 16px; margin-bottom: 18px; }
+  @media (max-width: 960px) { .top { grid-template-columns: 1fr; } }
+
+  /* ---- Map ---- */
+  #map { height: 440px; border-radius: 12px; background: #0a1324; border: 1px solid var(--line); }
+  .map-fallback { padding: 60px 16px; color: var(--muted); text-align: center; }
+  .leaflet-container { font-family: var(--font); background: #0a1324; }
+  /* Dark map: invert the normal light map, rotate colours back, then mute and tint it navy.
+     Only the map tiles are filtered; dots, lines and labels keep their real colours. */
+  .leaflet-tile-pane { filter: invert(100%) hue-rotate(185deg) brightness(88%) contrast(92%) saturate(45%); }
+  .leaflet-control-attribution { background: rgba(6, 11, 23, 0.7) !important; color: var(--muted) !important; }
+  .leaflet-control-attribution a { color: var(--text-2) !important; }
+  .leaflet-bar a { background: var(--panel-hi) !important; color: var(--text) !important; border-color: var(--line) !important; }
+
+  .leaflet-tooltip.site-label, .leaflet-tooltip.wtip {
+    background: rgba(10, 19, 36, 0.94); color: var(--text); border: 1px solid var(--line-2);
+    border-radius: 8px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45); font-size: 12px; line-height: 1.4;
+  }
+  .leaflet-tooltip.site-label { padding: 4px 9px; }
+  .leaflet-tooltip.wtip { padding: 8px 10px; }
+  .leaflet-tooltip-left.site-label::before { border-left-color: var(--line-2); }
+  .leaflet-tooltip-right.site-label::before { border-right-color: var(--line-2); }
+  .leaflet-tooltip-top.wtip::before { border-top-color: var(--line-2); }
+  .site-label-name { font-weight: 700; font-size: 13px; }
+  .site-label-wbgt { color: var(--text-2); }
+
+  /* Worker dots: glowing, with a pulsing ring when at risk */
+  .wmarker { background: none; border: 0; }
+  .wdot {
+    display: block; width: 16px; height: 16px; border-radius: 50%; position: relative; cursor: pointer;
+    background: var(--c); border: 2px solid #0a1324; box-shadow: 0 0 10px var(--c);
+    transition: background-color .6s, box-shadow .6s;
+  }
+  .wdot.lvl-GREEN { --c: var(--green); }
+  .wdot.lvl-YELLOW { --c: var(--yellow); }
+  .wdot.lvl-RED { --c: var(--red); }
+  .wdot.risk::after {
+    content: ""; position: absolute; inset: -3px; border-radius: 50%; border: 2px solid var(--red);
+    animation: ping 1.6s cubic-bezier(0, 0, .2, 1) infinite;
+  }
+
+  /* ---- Site conditions ---- */
+  .site { padding: 12px 0; border-top: 1px solid var(--line); }
+  .site:first-child { border-top: 0; padding-top: 2px; }
+  .site-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .site-name { font-weight: 700; font-size: 14px; }
+  .site-wbgt { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .site-wbgt small { font-size: 11px; color: var(--muted); font-weight: 600; margin-left: 2px; }
+  .site-detail { color: var(--text-2); font-size: 12.5px; margin-top: 2px; }
+  .site-cat { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+  .site-cat.c-GREEN { color: var(--green-text); }
+  .site-cat.c-YELLOW { color: var(--yellow-text); }
+  .site-cat.c-RED { color: var(--red-text); }
+  .sim-tag { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; color: var(--yellow-text);
+             border: 1px solid rgba(var(--yellow-rgb), .4); border-radius: 999px; padding: 0 6px; margin-left: 6px; }
+
+  /* ---- Progress bars (heart rate, skin temp, WBGT) ---- */
+  .track { position: relative; height: 6px; border-radius: 999px; background: rgba(148, 163, 184, 0.14); margin-top: 6px; overflow: visible; }
+  .fill {
+    position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: 999px;
+    background: var(--zc, var(--green)); box-shadow: 0 0 10px var(--zc, var(--green));
+    transition: width .8s cubic-bezier(.2, .8, .2, 1), background-color .6s, box-shadow .6s;
+  }
+  .z-GREEN { --zc: var(--green); }
+  .z-YELLOW { --zc: var(--yellow); }
+  .z-RED { --zc: var(--red); }
+  .tick { position: absolute; top: -3px; bottom: -3px; width: 2px; border-radius: 2px; background: rgba(231, 238, 249, 0.35); }
 
   /* ---- Worker cards ---- */
-  .cards {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px;
-  }
+  .section-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; margin: 6px 0 12px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; color: var(--muted); font-size: 12px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 14px; }
   .card {
-    background: var(--surface); border: 1px solid var(--border); border-left: 6px solid var(--lvl);
-    border-radius: 12px; padding: 12px 14px; transition: box-shadow .2s;
+    --rgb: var(--green-rgb);
+    position: relative; border-radius: var(--radius); padding: 16px 16px 14px; overflow: hidden;
+    background: linear-gradient(180deg, #13203a, #0e182c);
+    border: 1px solid var(--line); box-shadow: var(--shadow);
+    transition: border-color .6s, box-shadow .6s;
   }
-  .card.flash { box-shadow: 0 0 0 3px var(--accent); }
-  .card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-  .card-id { font-size: 18px; font-weight: 700; }
-  .card-meta { color: var(--text-2); font-size: 13px; margin: 2px 0 10px; }
+  /* Fade-in only for brand-new cards (class removed after), so it never replays. */
+  .card.entering { animation: cardIn .45s ease-out both; }
+  .card::before {
+    content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px;
+    background: linear-gradient(90deg, rgba(var(--rgb), 0.95), rgba(var(--rgb), 0.15));
+    transition: background .6s;
+  }
+  .card.lvl-YELLOW { --rgb: var(--yellow-rgb); }
+  .card.lvl-RED { --rgb: var(--red-rgb); border-color: rgba(var(--red-rgb), 0.45); }
+  /* RED workers: strong, fast red pulse. Predicted RED: softer, slower red pulse,
+     so actual emergencies stand out even when many workers are trending up. */
+  .card.at-risk { animation: riskPulseSoft 3s ease-in-out infinite; }
+  .card.at-risk.lvl-RED { animation: riskPulse 1.8s ease-in-out infinite; }
+  .card.flash { box-shadow: 0 0 0 3px var(--accent), var(--shadow); }
+
+  .card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+  .card-id { font-size: 20px; font-weight: 800; letter-spacing: 0.01em; }
+  .card-meta { color: var(--text-2); font-size: 12.5px; text-transform: capitalize; }
+
   .badge {
-    display: inline-flex; align-items: center; gap: 5px; border-radius: 999px;
-    padding: 3px 10px; font-size: 12px; font-weight: 700; background: var(--lvl); color: #fff;
+    --rgb: var(--green-rgb);
+    display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px;
+    font-size: 12px; font-weight: 800; letter-spacing: 0.06em; white-space: nowrap;
+    color: rgb(var(--rgb)); background: rgba(var(--rgb), 0.13); border: 1px solid rgba(var(--rgb), 0.45);
+    box-shadow: 0 0 14px rgba(var(--rgb), 0.25);
+    transition: color .5s, background-color .5s, border-color .5s, box-shadow .5s;
   }
-  .lvl-YELLOW .badge { color: #0b0b0b; }
-  .metrics { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px 12px; }
-  .metric .k { color: var(--muted); font-size: 12px; }
-  .metric .v { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .badge.b-GREEN { --rgb: var(--green-rgb); color: var(--green-text); }
+  .badge.b-YELLOW { --rgb: var(--yellow-rgb); color: var(--yellow-text); }
+  .badge.b-RED { --rgb: var(--red-rgb); color: var(--red-text); }
+
+  .meters { display: grid; gap: 10px; margin: 14px 0 12px; }
+  .meter-row { display: flex; justify-content: space-between; align-items: baseline; font-size: 12.5px; }
+  .meter-k { color: var(--muted); font-weight: 600; }
+  .meter-v { color: var(--text-2); }
+  .meter-v b { color: var(--text); font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    font-size: 11.5px; font-weight: 600; color: var(--text-2); padding: 3px 9px; border-radius: 999px;
+    background: rgba(255, 255, 255, 0.05); border: 1px solid var(--line); text-transform: capitalize;
+  }
+
   .forecast {
-    margin: 10px 0 0; padding: 6px 10px; border-radius: 8px; font-size: 13px; font-weight: 600;
-    border: 1px dashed var(--fc); color: var(--text); display: flex; gap: 6px; align-items: baseline;
+    margin-top: 12px; padding: 8px 10px; border-radius: 10px; font-size: 13px; font-weight: 600;
+    display: flex; gap: 8px; align-items: baseline;
+    background: rgba(var(--fc-rgb), 0.1); border: 1px dashed rgba(var(--fc-rgb), 0.55);
+    animation: fadeIn .4s ease-out;
   }
-  .forecast .fc-icon { color: var(--fc); }
-  .forecast .fc-prob { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: auto; }
-  .fc-RED { --fc: var(--red); }
-  .fc-YELLOW { --fc: #c98a00; }
-  .tile.rising .num { color: var(--text); }
-  .tile.rising .ai { font-size: 18px; }
-  .reasons { margin: 10px 0 0; padding: 0; list-style: none; color: var(--text-2); font-size: 12.5px; }
-  .reasons li::before { content: "• "; color: var(--muted); }
+  .fc-RED { --fc-rgb: var(--red-rgb); }
+  .fc-YELLOW { --fc-rgb: var(--yellow-rgb); }
+  .forecast .fc-icon { color: rgb(var(--fc-rgb)); font-weight: 800; }
+  .forecast .fc-prob { margin-left: auto; color: var(--muted); font-weight: 500; font-size: 12px; white-space: nowrap; }
+  .ai-tag { font-size: 10px; font-weight: 800; letter-spacing: .08em; color: #9cc0ff; border: 1px solid rgba(var(--blue-rgb), .45);
+            border-radius: 5px; padding: 0 5px; margin-right: 2px; }
 
-  .lvl-GREEN  { --lvl: var(--green); }
-  .lvl-YELLOW { --lvl: var(--yellow); }
-  .lvl-RED    { --lvl: var(--red); }
+  .reasons { margin: 10px 0 0; padding: 0; list-style: none; color: var(--text-2); font-size: 12px; }
+  .reasons li { padding-left: 12px; position: relative; }
+  .reasons li::before { content: ""; position: absolute; left: 2px; top: .62em; width: 4px; height: 4px; border-radius: 50%; background: var(--muted); }
 
-  .empty { color: var(--muted); padding: 24px; text-align: center; }
+  .card-alert { margin-top: 10px; font-size: 12.5px; font-weight: 700; color: var(--red-text); }
+  .card-alert.handled { color: var(--text-2); font-weight: 500; }
 
-  /* ---- Interventions: card buttons ---- */
-  .card.has-alert { box-shadow: 0 0 0 2px var(--red); }
-  .card-alert {
-    margin: 10px 0 0; font-size: 12.5px; font-weight: 600; color: var(--red);
-  }
-  .card-alert.handled { color: var(--text-2); font-weight: 400; }
-  .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
   .act {
-    font: inherit; font-size: 12.5px; padding: 6px 10px; border-radius: 8px; cursor: pointer;
-    border: 1px solid var(--border); background: var(--bg); color: var(--text);
+    font: inherit; font-size: 12.5px; font-weight: 600; padding: 7px 11px; border-radius: 10px; cursor: pointer;
+    color: var(--text); background: rgba(255, 255, 255, 0.05); border: 1px solid var(--line-2);
+    transition: background-color .2s, border-color .2s, transform .1s, box-shadow .2s;
   }
-  .act:hover { border-color: var(--accent); }
-  .act:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .act:disabled { opacity: .55; cursor: wait; }
-  .act.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-  .last-action { color: var(--muted); font-size: 12px; margin-top: 6px; }
+  .act:hover { background: rgba(255, 255, 255, 0.09); border-color: rgba(var(--blue-rgb), 0.6); }
+  .act:active { transform: translateY(1px); }
+  .act:disabled { opacity: .5; cursor: wait; }
+  .act.primary {
+    color: #fff; border-color: transparent;
+    background: linear-gradient(180deg, #5b95ff, #3f74e6); box-shadow: 0 0 16px rgba(var(--blue-rgb), 0.35);
+  }
+  .last-action { color: var(--muted); font-size: 12px; margin-top: 8px; }
+  .empty { color: var(--muted); padding: 24px; text-align: center; }
 
   /* ---- Supervisor pop-ups ---- */
   .alert-stack {
     /* Bottom-right, so pop-ups never cover the header's switch and sound button */
-    position: fixed; z-index: 1000; right: 16px; bottom: 16px; width: min(360px, calc(100vw - 32px));
-    max-height: 60vh; overflow-y: auto; display: flex; flex-direction: column-reverse; gap: 10px;
+    position: fixed; z-index: 1000; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    width: min(380px, calc(100vw - 32px)); max-height: 70vh; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 10px;
   }
+  .stack-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 8px 10px 8px 14px; border-radius: 12px; font-size: 13px; font-weight: 700;
+    background: rgba(10, 19, 36, 0.96); border: 1px solid rgba(var(--red-rgb), 0.5); color: var(--red-text);
+    box-shadow: 0 0 22px rgba(var(--red-rgb), 0.25), 0 10px 30px rgba(0, 0, 0, 0.5);
+  }
+  .stack-btn {
+    font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; padding: 5px 10px; border-radius: 8px;
+    color: var(--text); background: rgba(255, 255, 255, 0.06); border: 1px solid var(--line-2);
+  }
+  .stack-btn:hover { border-color: rgba(var(--blue-rgb), 0.6); }
+  .stack-more { width: 100%; text-align: center; padding: 9px; }
+  .popup-now { font-size: 12px; font-weight: 600; color: var(--text-2); margin-left: auto; white-space: nowrap; }
   .popup {
-    background: var(--surface); color: var(--text); border: 1px solid var(--border);
-    border-left: 6px solid var(--pc); border-radius: 12px; padding: 12px 14px;
-    box-shadow: 0 8px 24px rgba(0,0,0,.22); animation: pop-in .2s ease-out;
+    --rgb: var(--red-rgb);
+    border-radius: 14px; padding: 14px 16px; color: var(--text);
+    background: linear-gradient(180deg, rgba(24, 36, 64, 0.97), rgba(14, 23, 42, 0.97));
+    border: 1px solid rgba(var(--rgb), 0.55);
+    box-shadow: 0 0 0 1px rgba(var(--rgb), 0.15), 0 0 32px rgba(var(--rgb), 0.3), 0 18px 40px rgba(0, 0, 0, 0.55);
+    animation: popIn .35s cubic-bezier(.2, .8, .2, 1);
   }
-  .popup.kind-red { --pc: var(--red); }
-  .popup.kind-predicted_red { --pc: var(--yellow); }
-  .popup-title { font-weight: 700; font-size: 15px; display: flex; gap: 6px; align-items: baseline; }
-  .popup-title .icon { color: var(--pc); }
-  .popup-meta { color: var(--text-2); font-size: 12.5px; margin: 2px 0 6px; }
-  .popup-msg { font-size: 13px; }
-  .popup .link { font: inherit; font-size: 12px; background: none; border: 0; color: var(--accent);
-                 cursor: pointer; padding: 0; text-decoration: underline; }
-  .sound-hint { background: var(--surface); border: 1px dashed var(--border); border-radius: 10px;
-                padding: 8px 12px; font-size: 12.5px; color: var(--text-2); }
-  @keyframes pop-in { from { transform: translateY(-8px); opacity: 0; } to { transform: none; opacity: 1; } }
-  @media (prefers-reduced-motion: reduce) { .popup { animation: none; } }
-
-  .sound-btn {
-    font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 999px; cursor: pointer;
-    border: 1px solid var(--border); background: var(--surface); color: var(--text);
-  }
-  .sound-btn.locked { border-color: var(--red); color: var(--red); font-weight: 600; }
+  .popup.kind-predicted_red { --rgb: var(--yellow-rgb); }
+  .popup-title { font-weight: 800; font-size: 15px; display: flex; gap: 8px; align-items: baseline; }
+  .popup-title .icon { color: rgb(var(--rgb)); }
+  .popup-meta { color: var(--text-2); font-size: 12.5px; margin: 2px 0 8px; text-transform: capitalize; }
+  .popup-msg { font-size: 13px; color: var(--text-2); }
+  .popup .link { font: inherit; font-size: 12px; background: none; border: 0; color: #9cc0ff;
+                 cursor: pointer; padding: 0; margin-top: 8px; text-decoration: underline; }
+  .sound-hint { border-radius: 12px; padding: 10px 12px; font-size: 12.5px; color: var(--text-2);
+                background: rgba(10, 19, 36, 0.95); border: 1px dashed var(--line-2); }
 
   .toast {
-    position: fixed; z-index: 1001; left: 50%; bottom: 20px; transform: translateX(-50%);
-    background: #1b1b1a; color: #fff; padding: 8px 14px; border-radius: 8px; font-size: 13px;
-    box-shadow: 0 4px 14px rgba(0,0,0,.25);
+    position: fixed; z-index: 1001; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+    transform: translateX(-50%); padding: 10px 16px; border-radius: 10px; font-size: 13px; font-weight: 600;
+    background: rgba(20, 34, 61, 0.97); color: var(--text); border: 1px solid rgba(var(--blue-rgb), 0.5);
+    box-shadow: 0 0 24px rgba(var(--blue-rgb), 0.3), 0 10px 30px rgba(0, 0, 0, 0.5);
+    animation: fadeIn .25s ease-out;
   }
-  /* Wide screens: bottom-left, away from the pop-ups on the right. Phones: centred. */
   @media (min-width: 700px) { .toast { left: 24px; transform: none; } }
 
   /* ---- Action log ---- */
-  .log-panel { margin-top: 16px; }
+  .log-panel { margin-top: 18px; }
   .log-head { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; justify-content: space-between; }
-  .log-filter { color: var(--text-2); font-size: 13px; display: inline-flex; gap: 6px; align-items: center; }
+  .log-filter { color: var(--text-2); font-size: 13px; display: inline-flex; gap: 8px; align-items: center; cursor: pointer; }
+  .log-filter input { accent-color: var(--accent); }
   .log-wrap { overflow-x: auto; }
   .log { width: 100%; border-collapse: collapse; font-size: 13px; }
-  .log th { text-align: left; color: var(--muted); font-weight: 600; font-size: 12px;
-            border-bottom: 1px solid var(--border); padding: 6px 8px; white-space: nowrap; }
-  .log td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertical-align: top; }
-  .log td.t { white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--text-2); }
-  .log .ev { font-weight: 600; white-space: nowrap; }
-  .log .ev-alert { color: var(--red); }
-  .log .ev-predicted { color: #c98a00; }
-  .log .ev-action { color: var(--accent); }
-  .log .ev-cleared { color: var(--green); }
-  .log .resp { color: var(--muted); font-size: 12px; }
+  .log th { text-align: left; color: var(--muted); font-weight: 700; font-size: 11px; letter-spacing: .1em;
+            text-transform: uppercase; border-bottom: 1px solid var(--line-2); padding: 8px 10px; white-space: nowrap; }
+  .log td { border-bottom: 1px solid var(--line); padding: 9px 10px; vertical-align: top; color: var(--text-2); }
+  .log tbody tr { transition: background-color .2s; }
+  .log tbody tr:hover { background: rgba(255, 255, 255, 0.03); }
+  .log td.t { white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--muted); }
+  .log td.w { color: var(--text); font-weight: 700; }
+  .log .ev { font-weight: 700; white-space: nowrap; }
+  .log .ev-alert { color: var(--red-text); }
+  .log .ev-predicted { color: var(--yellow-text); }
+  .log .ev-action { color: #9cc0ff; }
+  .log .ev-cleared { color: var(--green-text); }
+  .log .resp { color: var(--muted); }
 
-  /* Map tooltip text uses the page's ink colours */
-  .leaflet-tooltip { font: 12.5px/1.4 system-ui, "Segoe UI", sans-serif; }
+  footer { color: var(--muted); font-size: 12px; text-align: center; margin-top: 28px; }
+
+  /* ---- Animations ---- */
+  @keyframes ping { 0% { transform: scale(1); opacity: .85; } 100% { transform: scale(2.6); opacity: 0; } }
+  @keyframes softPulse { 0%, 100% { box-shadow: 0 0 0 rgba(var(--red-rgb), 0); } 50% { box-shadow: 0 0 14px rgba(var(--red-rgb), .45); } }
+  @keyframes riskPulse {
+    0%, 100% { box-shadow: 0 0 0 1px rgba(var(--red-rgb), .45), 0 0 16px rgba(var(--red-rgb), .22), var(--shadow); }
+    50%      { box-shadow: 0 0 0 1px rgba(var(--red-rgb), .9),  0 0 34px rgba(var(--red-rgb), .55), var(--shadow); }
+  }
+  @keyframes riskPulseSoft {
+    0%, 100% { box-shadow: 0 0 0 1px rgba(var(--red-rgb), .2), 0 0 8px rgba(var(--red-rgb), .08), var(--shadow); }
+    50%      { box-shadow: 0 0 0 1px rgba(var(--red-rgb), .45), 0 0 18px rgba(var(--red-rgb), .22), var(--shadow); }
+  }
+  @keyframes kpiGlow {
+    0%, 100% { box-shadow: 0 0 0 rgba(var(--rgb), 0), var(--shadow); }
+    50%      { box-shadow: 0 0 28px rgba(var(--rgb), .35), var(--shadow); }
+  }
+  @keyframes cardIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  @keyframes popIn { from { opacity: 0; transform: translateY(12px) scale(.98); } to { opacity: 1; transform: none; } }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes badgePop { 0% { transform: scale(1); } 40% { transform: scale(1.15); } 100% { transform: scale(1); } }
+  .badge.pop { animation: badgePop .45s ease-out; }
+
+  /* People who ask their system for less motion get a calm, static screen. */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
 </style>
 </head>
 <body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <!-- Logo: thermometer in a heat-gradient tile -->
+      <svg class="brand-logo" width="38" height="38" viewBox="0 0 32 32" aria-hidden="true">
+        <defs>
+          <linearGradient id="logo-grad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#ff9a3d"/><stop offset="1" stop-color="#ff3d6e"/>
+          </linearGradient>
+        </defs>
+        <rect x="1" y="1" width="30" height="30" rx="9" fill="url(#logo-grad)"/>
+        <path d="M16 6.5a2.9 2.9 0 0 0-2.9 2.9v8.3a4.9 4.9 0 1 0 5.8 0V9.4A2.9 2.9 0 0 0 16 6.5z"
+              fill="none" stroke="#fff" stroke-width="1.9"/>
+        <circle cx="16" cy="21.6" r="2.3" fill="#fff"/>
+        <path d="M16 12.2v7.4" stroke="#fff" stroke-width="1.9" stroke-linecap="round"/>
+        <path d="M22.5 9.5c1.2.9 1.2 2.1 0 3M25 8c2 1.6 2 4.4 0 6" fill="none" stroke="#fff" stroke-width="1.4" stroke-linecap="round" opacity=".85"/>
+      </svg>
+      <div>
+        <div class="brand-name">QAIZ</div>
+        <div class="brand-tag">Heat-stress control room · UAE</div>
+      </div>
+    </div>
+
+    <div class="switch" role="group" aria-label="Weather source">
+      <button type="button" data-mode="live" aria-pressed="false">📡 Live weather</button>
+      <button type="button" data-mode="offline" aria-pressed="false">☀️ Summer scenario</button>
+    </div>
+
+    <div class="controls">
+      <span id="live-pill" class="pill live" role="status"><span class="live-dot"></span><span id="live-text">CONNECTING</span></span>
+      <span id="demo-badge" class="pill demo-badge" hidden></span>
+      <button type="button" id="sound-btn" class="btn-pill">🔔 Sound</button>
+      <div class="clock" aria-label="Current time in the UAE">
+        <span id="clock-time" class="clock-time">--:--:--</span>
+        <span id="clock-date" class="clock-date">&nbsp;</span>
+      </div>
+    </div>
+  </div>
+</header>
+
 <div class="wrap">
 
-  <header>
-    <div>
-      <h1>Heat-Stress Monitor</h1>
-      <p class="subtitle">15 outdoor workers across 4 UAE sites</p>
-    </div>
-    <div class="controls">
-      <div class="switch" role="group" aria-label="Weather source">
-        <button type="button" data-mode="live" aria-pressed="false">Live weather</button>
-        <button type="button" data-mode="offline" aria-pressed="false">Summer scenario</button>
-      </div>
-      <button type="button" id="sound-btn" class="sound-btn">🔔 Sound</button>
-      <span id="demo-badge" class="demo-badge" hidden></span>
-      <span id="status" class="status">Connecting…</span>
-    </div>
-  </header>
+  <div id="status" class="statusbar" role="status">Connecting…</div>
 
-  <section class="summary" aria-label="Summary">
-    <div class="tile lvl-RED"><span class="badge">▲ RED</span><span class="num" id="count-RED">–</span><span class="lbl">danger</span></div>
-    <div class="tile lvl-YELLOW"><span class="badge">! YELLOW</span><span class="num" id="count-YELLOW">–</span><span class="lbl">caution</span></div>
-    <div class="tile lvl-GREEN"><span class="badge">✓ GREEN</span><span class="num" id="count-GREEN">–</span><span class="lbl">OK</span></div>
-    <div class="tile rising" title="Workers the AI forecast expects to reach a higher level within 15 minutes">
-      <span class="ai">↗</span><span class="num" id="count-rising">–</span><span class="lbl">rising (AI forecast, next 15 min)</span>
+  <section class="kpis" aria-label="Summary">
+    <div class="kpi kpi-RED" id="kpi-RED">
+      <div class="kpi-icon">▲</div>
+      <div class="kpi-value"><span id="count-RED" class="num">–</span><small>/ <span class="total">15</span></small></div>
+      <div class="kpi-label">RED · danger</div>
+    </div>
+    <div class="kpi kpi-YELLOW">
+      <div class="kpi-icon">!</div>
+      <div class="kpi-value"><span id="count-YELLOW" class="num">–</span><small>/ <span class="total">15</span></small></div>
+      <div class="kpi-label">YELLOW · caution</div>
+    </div>
+    <div class="kpi kpi-GREEN">
+      <div class="kpi-icon">✓</div>
+      <div class="kpi-value"><span id="count-GREEN" class="num">–</span><small>/ <span class="total">15</span></small></div>
+      <div class="kpi-label">GREEN · OK</div>
+    </div>
+    <div class="kpi kpi-AI" title="Workers the AI forecast expects to reach a higher level within 15 minutes">
+      <div class="kpi-icon">↗</div>
+      <div class="kpi-value"><span id="count-rising" class="num">–</span></div>
+      <div class="kpi-label">Rising · AI forecast (15 min)</div>
     </div>
   </section>
 
   <section class="top">
     <div class="panel">
-      <h2>Worker locations</h2>
+      <h2 class="panel-title">Worker locations</h2>
       <div id="map"></div>
-      <p class="note">Each dot is one worker, in a ring around their site. Dubai and Sharjah are close together, so their groups are pulled apart slightly; the dashed line points to the real location. Hover a dot for details, or click it to find the card.</p>
+      <p class="note">Each dot is one worker, in a ring around their site. Pulsing rings mark workers who are RED or predicted RED. Dubai and Sharjah are close together, so their groups are pulled apart slightly; the dashed line points to the real location.</p>
     </div>
     <div class="panel">
-      <h2>Site conditions</h2>
+      <h2 class="panel-title">Site conditions</h2>
       <div id="sites"><p class="empty">Waiting for data…</p></div>
-      <p class="note">WBGT is estimated from air temperature, humidity and sunlight.</p>
+      <p class="note">WBGT (heat stress) is estimated from air temperature, humidity and sunlight. Low &lt; 28 °C · Moderate 28–31 · High ≥ 31.</p>
     </div>
   </section>
 
-  <section>
+  <section aria-labelledby="workers-title">
+    <div class="section-head">
+      <h2 class="panel-title" id="workers-title" style="margin:0">Workforce <span class="count" id="workers-count"></span></h2>
+      <div class="legend">
+        <span><i style="background:var(--red)"></i>▲ RED</span>
+        <span><i style="background:var(--yellow)"></i>! YELLOW</span>
+        <span><i style="background:var(--green)"></i>✓ GREEN</span>
+        <span>Sorted by risk · bars show thresholds as ticks</span>
+      </div>
+    </div>
     <div class="cards" id="cards"><p class="empty">Waiting for data…</p></div>
   </section>
 
   <section class="panel log-panel" aria-labelledby="log-title">
     <div class="log-head">
-      <h2 id="log-title">Action log</h2>
+      <h2 class="panel-title" id="log-title">Action log</h2>
       <label class="log-filter"><input type="checkbox" id="log-actions-only"> Supervisor actions only</label>
     </div>
     <div class="log-wrap" id="log"><p class="empty">No alerts or actions yet.</p></div>
   </section>
 
+  <footer>Qaiz hackathon prototype · simulated workers · WBGT estimated from weather data · not a certified safety device</footer>
 </div>
 
-<!-- Supervisor pop-ups appear here (top-right; bottom on phones) -->
+<!-- Supervisor pop-ups appear here (bottom-right) -->
 <div id="alert-stack" class="alert-stack" role="region" aria-label="Supervisor alerts" aria-live="assertive"></div>
 <div id="toast" class="toast" role="status" hidden></div>
 
@@ -293,15 +540,72 @@
   const POLL_MS = 3000;          // ask the server for new scores every 3 seconds
   const STALE_SECONDS = 20;      // warn if the scores stop updating
   const ICONS = { GREEN: "✓", YELLOW: "!", RED: "▲" };
-  const COLOURS = { GREEN: "#0ca30c", YELLOW: "#fab219", RED: "#d03b3b" };
+  const REDUCE_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // Gauge scales for the card bars: [min, max] and the scoring thresholds (ticks).
+  const HR_SCALE = { min: 50, max: 190, yellow: 130, red: 155 };
+  const SKIN_SCALE = { min: 33, max: 38, yellow: 35.5, red: 36.5 };
+  const WBGT_SCALE = { min: 20, max: 38, yellow: 28, red: 31 };
 
   let map = null;
+  let speed = 1;                 // demo speed reported by the risk engine (15 in --demo mode)
   const workerDots = {};         // worker_id -> map marker
   const siteMarkers = {};        // site name -> map marker
 
   // Make text safe to put inside HTML.
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  const pct = (v, s) => Math.max(0, Math.min(100, ((v - s.min) / (s.max - s.min)) * 100));
+  const zone = (v, s) => (v > s.red ? "RED" : v > s.yellow ? "YELLOW" : "GREEN");
+  const isAtRisk = (w) => w.level === "RED" || (w.forecast && w.forecast.level === "RED");
+
+  // ---------------- Smooth number changes ----------------
+  // Numbers count up/down to their new value instead of jumping.
+  function tweenNumber(el, to, decimals = 0) {
+    const from = parseFloat(el.dataset.v);
+    el.dataset.v = to;
+    if (REDUCE_MOTION || isNaN(from) || from === to) {
+      el.textContent = Number(to).toFixed(decimals);
+      return;
+    }
+    cancelAnimationFrame(el._raf);
+    const start = performance.now();
+    const duration = 650;
+    const step = (now) => {
+      // Keep progress between 0 and 1. A frame's timestamp can be slightly earlier
+      // than `start`, which would otherwise show values like "-0" for a moment.
+      const k = Math.max(0, Math.min(1, (now - start) / duration));
+      const eased = 1 - Math.pow(1 - k, 3);
+      el.textContent = (from + (to - from) * eased).toFixed(decimals);
+      if (k < 1) el._raf = requestAnimationFrame(step);
+    };
+    el._raf = requestAnimationFrame(step);
+  }
+
+  // ---------------- Clock (UAE time) ----------------
+  function tickClock() {
+    const now = new Date();
+    let time, date;
+    try {
+      time = now.toLocaleTimeString("en-GB", { timeZone: "Asia/Dubai", hour12: false });
+      date = now.toLocaleDateString("en-GB", { timeZone: "Asia/Dubai", weekday: "short", day: "numeric", month: "short" }) + " · GST";
+    } catch {
+      time = now.toLocaleTimeString();
+      date = now.toLocaleDateString();
+    }
+    document.getElementById("clock-time").textContent = time;
+    document.getElementById("clock-date").textContent = date;
+  }
+
+  // LIVE indicator: green pulsing when data is fresh, amber while switching, red when stale.
+  function setLive(state, text) {
+    const pill = document.getElementById("live-pill");
+    pill.classList.toggle("is-live", state === "live");
+    pill.classList.toggle("is-warn", state === "warn");
+    pill.classList.toggle("is-down", state === "down");
+    document.getElementById("live-text").textContent = text;
+  }
 
   // ---------------- Map ----------------
   function setupMap() {
@@ -311,9 +615,11 @@
       return;
     }
     map = L.map("map", { scrollWheelZoom: false }).setView([24.8, 55.0], 8);
+    // Free OpenStreetMap tiles (no API key). A CSS colour filter (see .leaflet-tile-pane)
+    // turns them into a dark map that matches the control-room theme.
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 18,
-      attribution: "&copy; OpenStreetMap contributors",
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     }).addTo(map);
     // Dot positions are worked out in screen pixels, so redo them after zooming.
     map.on("zoomend", () => { if (lastData) updateMap(lastData); });
@@ -383,14 +689,14 @@
       const centre = groupCentre(name, s);
       centres[name] = centre;
       const side = (SITE_LAYOUT[name] || {}).side || "right";
-      const label = `<span class="site-label-name">${esc(name)}</span><br>WBGT ${s.wbgt_c.toFixed(1)}°C`;
+      const label = `<span class="site-label-name">${esc(name)}</span><br><span class="site-label-wbgt">WBGT ${s.wbgt_c.toFixed(1)}°C</span>`;
 
       if (!siteMarkers[name]) {
         siteLines[name] = L.polyline([real, centre], {
-          color: "#55554f", weight: 1.5, dashArray: "3 4", interactive: false,
+          color: "#7081a0", weight: 1.5, dashArray: "3 4", interactive: false,
         }).addTo(map);
         L.circleMarker(real, {
-          radius: 4, color: "#55554f", weight: 2, fillColor: "#fff", fillOpacity: 1, interactive: false,
+          radius: 4, color: "#a7b4c8", weight: 2, fillColor: "#0a1324", fillOpacity: 1, interactive: false,
         }).addTo(map);
         // An invisible anchor at the group centre carries the label.
         siteMarkers[name] = L.circleMarker(centre, { radius: 0, opacity: 0, interactive: false })
@@ -405,7 +711,7 @@
       siteLines[name].setLatLngs([real, centre]);
     }
 
-    // Worker dots, grouped by site.
+    // Worker dots (HTML markers, so they can glow and pulse), grouped by site.
     const bySite = {};
     for (const w of data.workers) (bySite[w.site] ||= []).push(w);
     for (const [site, workers] of Object.entries(bySite)) {
@@ -415,22 +721,30 @@
         const pos = ringPosition(centres[site], i, workers.length);
         const tip =
           `<b>${esc(w.worker_id)}</b> · ${ICONS[w.level]} ${w.level}<br>` +
-          `${esc(w.job)}, ${esc(w.site)}<br>` +
+          `<span style="text-transform:capitalize">${esc(w.job)}</span>, ${esc(w.site)}<br>` +
           `Heart rate ${w.avg_heart_rate_bpm} bpm · Skin ${w.avg_skin_temp_c}°C<br>` +
           `Activity: ${esc(w.activity_level)}` +
           (w.forecast ? `<br><b>↗ ${forecastText(w.forecast)}</b>` : "");
         let dot = workerDots[w.worker_id];
         if (!dot) {
-          dot = L.circleMarker(pos, { radius: DOT_PX, weight: 2, color: "#fff", fillOpacity: 1 })
+          const icon = L.divIcon({
+            className: "wmarker",
+            html: '<span class="wdot"></span>',
+            iconSize: [DOT_PX * 2, DOT_PX * 2],
+            iconAnchor: [DOT_PX, DOT_PX],
+          });
+          dot = L.marker(pos, { icon, keyboard: false, riseOnHover: true })
             .addTo(map)
             .on("click", () => focusCard(w.worker_id));
-          dot.bindTooltip("", { direction: "top", offset: [0, -8] });
+          dot.bindTooltip("", { direction: "top", offset: [0, -10], className: "wtip" });
           workerDots[w.worker_id] = dot;
         }
         dot.setLatLng(pos);
-        dot.setStyle({ fillColor: COLOURS[w.level] });
         dot.setTooltipContent(tip);
-        if (w.level === "RED") dot.bringToFront();
+        // Update the dot's colour/pulse in place, so the colour change animates.
+        const el = dot.getElement() && dot.getElement().firstChild;
+        if (el) el.className = `wdot lvl-${w.level}${isAtRisk(w) ? " risk" : ""}`;
+        dot.setZIndexOffset(isAtRisk(w) ? 1000 : 0);
       });
     }
   }
@@ -438,18 +752,20 @@
   function focusCard(id) {
     const card = document.getElementById("card-" + id);
     if (!card) return;
-    card.scrollIntoView({ behavior: "smooth", block: "center" });
+    card.scrollIntoView({ behavior: REDUCE_MOTION ? "auto" : "smooth", block: "center" });
     card.classList.add("flash");
     setTimeout(() => card.classList.remove("flash"), 1500);
   }
 
-  // ---------------- Cards, tiles, sites ----------------
+  // ---------------- KPI tiles ----------------
   function renderSummary(workers) {
     for (const lvl of ["GREEN", "YELLOW", "RED"]) {
-      document.getElementById("count-" + lvl).textContent =
-        workers.filter((w) => w.level === lvl).length;
+      tweenNumber(document.getElementById("count-" + lvl), workers.filter((w) => w.level === lvl).length);
     }
-    document.getElementById("count-rising").textContent = workers.filter((w) => w.forecast).length;
+    tweenNumber(document.getElementById("count-rising"), workers.filter((w) => w.forecast).length);
+    document.querySelectorAll(".kpi .total").forEach((el) => { el.textContent = workers.length; });
+    document.getElementById("kpi-RED").classList.toggle("hot", workers.some((w) => w.level === "RED"));
+    document.getElementById("workers-count").textContent = `· ${workers.length} workers`;
   }
 
   // "Predicted: RED in ~12 min" line, only when the AI expects risk to rise.
@@ -461,43 +777,190 @@
   function renderForecast(f) {
     if (!f) return "";
     return `<div class="forecast fc-${f.level}" title="AI forecast: chance this worker reaches ${f.level} within ${f.minutes} minutes">
-      <span class="fc-icon">↗</span><span>${forecastText(f)}</span>
+      <span class="fc-icon">↗</span><span><span class="ai-tag">AI</span> ${forecastText(f)}</span>
       <span class="fc-prob">${Math.round(f.probability * 100)}% likely</span></div>`;
   }
 
+  // ---------------- Site conditions (built once, then updated in place) ----------------
+  const siteEls = {};
   function renderSites(sites) {
-    const html = Object.entries(sites || {}).map(([name, s]) => `
-      <div class="site">
-        <div class="site-name"><span>${esc(name)}</span><span class="site-wbgt">WBGT ${s.wbgt_c.toFixed(1)}°C</span></div>
-        <div class="site-detail">
-          ${s.air_temp_c.toFixed(1)}°C air · ${Math.round(s.humidity_pct)}% humidity · ${Math.round(s.solar_w_m2)} W/m² sun
-          ${s.source === "simulated" ? " · <i>simulated</i>" : ""}
+    const box = document.getElementById("sites");
+    const entries = Object.entries(sites || {});
+    if (!entries.length) return;
+    if (box.querySelector(".empty")) box.innerHTML = "";
+    for (const [name, s] of entries) {
+      let el = siteEls[name];
+      if (!el) {
+        el = document.createElement("div");
+        el.className = "site";
+        el.innerHTML = `
+          <div class="site-row">
+            <span class="site-name">${esc(name)}<span class="sim-tag" hidden>SIMULATED</span></span>
+            <span class="site-wbgt"><span class="num" data-r="wbgt"></span><small>°C WBGT</small></span>
+          </div>
+          <div class="site-row">
+            <span class="site-detail" data-r="detail"></span>
+            <span class="site-cat" data-r="cat"></span>
+          </div>
+          <div class="track">
+            <div class="fill"></div>
+            <i class="tick" style="left:${pct(WBGT_SCALE.yellow, WBGT_SCALE)}%"></i>
+            <i class="tick" style="left:${pct(WBGT_SCALE.red, WBGT_SCALE)}%"></i>
+          </div>`;
+        box.appendChild(el);
+        siteEls[name] = el;
+      }
+      const z = zone(s.wbgt_c, WBGT_SCALE);
+      tweenNumber(el.querySelector('[data-r="wbgt"]'), s.wbgt_c, 1);
+      el.querySelector('[data-r="detail"]').textContent =
+        `${s.air_temp_c.toFixed(1)}°C air · ${Math.round(s.humidity_pct)}% humidity · ${Math.round(s.solar_w_m2)} W/m² sun`;
+      const cat = el.querySelector('[data-r="cat"]');
+      cat.textContent = { GREEN: "Low", YELLOW: "Moderate", RED: "High" }[z];
+      cat.className = `site-cat c-${z}`;
+      const fill = el.querySelector(".fill");
+      fill.className = `fill z-${z}`;
+      fill.style.width = pct(s.wbgt_c, WBGT_SCALE) + "%";
+      el.querySelector(".sim-tag").hidden = s.source !== "simulated";
+    }
+  }
+
+  // ---------------- Worker cards (built once, then updated in place) ----------------
+  // Updating in place (instead of rebuilding) is what lets bars slide, numbers
+  // count and colours fade smoothly. It also means a redraw can't swallow a click.
+  const cardEls = new Map();   // worker_id -> { el, refs, level }
+  let firstCardRender = true;
+
+  function meterHTML(key, label, unit, scale) {
+    return `
+      <div class="meter">
+        <div class="meter-row"><span class="meter-k">${label}</span>
+          <span class="meter-v"><b data-r="${key}v"></b> ${unit}</span></div>
+        <div class="track">
+          <div class="fill" data-r="${key}fill"></div>
+          <i class="tick" style="left:${pct(scale.yellow, scale)}%" title="Caution threshold"></i>
+          <i class="tick" style="left:${pct(scale.red, scale)}%" title="Danger threshold"></i>
         </div>
-      </div>`).join("");
-    document.getElementById("sites").innerHTML = html || '<p class="empty">No sites yet.</p>';
+      </div>`;
+  }
+
+  function createCard(id) {
+    const el = document.createElement("article");
+    el.className = "card entering";
+    el.id = "card-" + id;
+    el.addEventListener("animationend", (e) => {
+      if (e.animationName === "cardIn") el.classList.remove("entering");
+    });
+    setTimeout(() => el.classList.remove("entering"), 800);  // in case animations are off
+    el.innerHTML = `
+      <div class="card-top">
+        <div>
+          <div class="card-id">${esc(id)}</div>
+          <div class="card-meta" data-r="meta"></div>
+        </div>
+        <span class="badge" data-r="badge"></span>
+      </div>
+      <div class="meters">
+        ${meterHTML("hr", "♥ Heart rate", "bpm", HR_SCALE)}
+        ${meterHTML("skin", "🌡 Skin temp", "°C", SKIN_SCALE)}
+      </div>
+      <div class="chips"><span class="chip" data-r="activity"></span><span class="chip" data-r="wbgt"></span></div>
+      <div data-r="forecast"></div>
+      <div data-r="reasons"></div>
+      <div data-r="alert"></div>
+      <div class="actions" data-r="actions"></div>
+      <div data-r="last"></div>`;
+    const refs = {};
+    el.querySelectorAll("[data-r]").forEach((n) => { refs[n.dataset.r] = n; });
+    return { el, refs, level: null };
+  }
+
+  function updateCard(c, w) {
+    const { el, refs } = c;
+    el.classList.remove("lvl-GREEN", "lvl-YELLOW", "lvl-RED");
+    el.classList.add("lvl-" + w.level);
+    el.classList.toggle("at-risk", isAtRisk(w));
+
+    refs.meta.textContent = `${w.job} · ${w.site}`;
+
+    if (c.level !== w.level) {
+      refs.badge.className = `badge b-${w.level}`;
+      refs.badge.textContent = `${ICONS[w.level]} ${w.level}`;
+      if (c.level) {  // a real change, not the first draw: give the badge a little pop
+        refs.badge.classList.remove("pop");
+        void refs.badge.offsetWidth;
+        refs.badge.classList.add("pop");
+      }
+      c.level = w.level;
+    }
+
+    tweenNumber(refs.hrv, w.avg_heart_rate_bpm, 0);
+    refs.hrfill.className = `fill z-${zone(w.avg_heart_rate_bpm, HR_SCALE)}`;
+    refs.hrfill.style.width = pct(w.avg_heart_rate_bpm, HR_SCALE) + "%";
+
+    tweenNumber(refs.skinv, w.avg_skin_temp_c, 1);
+    refs.skinfill.className = `fill z-${zone(w.avg_skin_temp_c, SKIN_SCALE)}`;
+    refs.skinfill.style.width = pct(w.avg_skin_temp_c, SKIN_SCALE) + "%";
+
+    refs.activity.textContent = `Activity: ${w.activity_level}`;
+    refs.wbgt.textContent = `WBGT ${w.wbgt_c.toFixed(1)}°C`;
+
+    setHTML(refs.forecast, renderForecast(w.forecast));
+    setHTML(refs.reasons, w.reasons.length
+      ? `<ul class="reasons">${w.reasons.map((r) => `<li>${esc(r)}</li>`).join("")}</ul>` : "");
+    setHTML(refs.alert, renderCardAlert(w));
+    setHTML(refs.actions, actionButtons(w.worker_id, w.alert));
+    setHTML(refs.last, renderLastAction(w.worker_id));
+  }
+
+  // Sort into calm risk groups (cards only move when a worker changes group):
+  // RED, then predicted RED, then YELLOW (rising first), then GREEN (rising first).
+  function riskRank(w) {
+    if (w.level === "RED") return 0;
+    if (w.forecast && w.forecast.level === "RED") return 1;
+    if (w.level === "YELLOW") return w.forecast ? 2 : 3;
+    return w.forecast ? 4 : 5;
   }
 
   function renderCards(workers) {
-    const html = workers.map((w) => `
-      <article class="card lvl-${w.level}${w.alert && !isHandled(w.alert) ? " has-alert" : ""}" id="card-${esc(w.worker_id)}">
-        <div class="card-head">
-          <span class="card-id">${esc(w.worker_id)}</span>
-          <span class="badge">${ICONS[w.level]} ${w.level}</span>
-        </div>
-        <div class="card-meta">${esc(w.job)} · ${esc(w.site)}</div>
-        <div class="metrics">
-          <div class="metric"><div class="k">Heart rate</div><div class="v">${w.avg_heart_rate_bpm} bpm</div></div>
-          <div class="metric"><div class="k">Skin temp</div><div class="v">${w.avg_skin_temp_c.toFixed(1)}°C</div></div>
-          <div class="metric"><div class="k">Activity</div><div class="v">${esc(w.activity_level)}</div></div>
-          <div class="metric"><div class="k">WBGT</div><div class="v">${w.wbgt_c.toFixed(1)}°C</div></div>
-        </div>
-        ${renderForecast(w.forecast)}
-        ${w.reasons.length ? `<ul class="reasons">${w.reasons.map((r) => `<li>${esc(r)}</li>`).join("")}</ul>` : ""}
-        ${renderCardAlert(w)}
-        <div class="actions">${actionButtons(w.worker_id, w.alert)}</div>
-        ${renderLastAction(w.worker_id)}
-      </article>`).join("");
-    setHTML(document.getElementById("cards"), html || '<p class="empty">No workers yet.</p>');
+    const box = document.getElementById("cards");
+    if (!workers.length) return;
+    if (box.querySelector(".empty")) box.innerHTML = "";
+
+    for (const w of workers) {
+      let c = cardEls.get(w.worker_id);
+      if (!c) {
+        c = createCard(w.worker_id);
+        cardEls.set(w.worker_id, c);
+        box.appendChild(c.el);
+      }
+      updateCard(c, w);
+    }
+
+    const sorted = [...workers].sort((a, b) => riskRank(a) - riskRank(b) || a.worker_id.localeCompare(b.worker_id));
+    const wanted = sorted.map((w) => cardEls.get(w.worker_id).el);
+    const current = [...box.children];
+    const changed = wanted.some((el, i) => current[i] !== el);
+    if (changed && !pointerIsDown) reorderCards(box, wanted, !firstCardRender);
+    firstCardRender = false;
+  }
+
+  // Move cards into their new order, gliding from old to new position ("FLIP").
+  function reorderCards(box, wanted, animate) {
+    const before = new Map(wanted.map((el) => [el, el.getBoundingClientRect()]));
+    const focused = document.activeElement;
+    wanted.forEach((el) => box.appendChild(el));
+    if (focused && box.contains(focused)) focused.focus({ preventScroll: true });
+    if (!animate || REDUCE_MOTION) return;
+    wanted.forEach((el) => {
+      const a = before.get(el);
+      const b = el.getBoundingClientRect();
+      const dx = a.left - b.left;
+      const dy = a.top - b.top;
+      if (dx || dy) {
+        el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "translate(0, 0)" }],
+                   { duration: 550, easing: "cubic-bezier(.2, .8, .2, 1)" });
+      }
+    });
   }
 
   function renderCardAlert(w) {
@@ -566,9 +1029,9 @@
   }
 
   // ---- Redrawing without losing clicks or keyboard focus ----
-  // The page redraws every 1-3 s. A redraw in the middle of a click would swallow
-  // the click, so we skip redraws while a mouse button / finger is held down, and
-  // put keyboard focus back on the same button afterwards.
+  // Some parts are still redrawn as HTML. We skip those redraws while a mouse
+  // button / finger is held down (so clicks aren't swallowed), skip them when
+  // nothing changed, and put keyboard focus back on the same button afterwards.
   let pointerIsDown = false;
   document.addEventListener("pointerdown", () => { pointerIsDown = true; }, true);
   document.addEventListener("pointerup", () => { pointerIsDown = false; }, true);
@@ -604,7 +1067,7 @@
       // refresh that started before the click comes back without it.
       logEntries.unshift(entry);
       recentLocal.push({ entry, until: Date.now() + 10000 });
-      showToast(`${entry.label} for ${worker}`);
+      showToast(`✓ ${entry.label} for ${worker}`);
     } catch (err) {
       showToast(`Couldn't log the action: ${err.message}`);
     } finally {
@@ -718,32 +1181,83 @@
   }
 
   // ---- Supervisor pop-ups ----
+  // Many alerts can be open at once (e.g. a hot afternoon), so the stack shows
+  // only the MOST URGENT few, with "+N more" to expand and a Hide button.
+  // A brand-new alert always brings the stack back, so nothing urgent is missed.
+  const POPUPS_SHOWN = window.matchMedia("(max-width: 600px)").matches ? 1 : 3;  // 1 on phones
+  let stackExpanded = false;
+  let stackHidden = false;
+  const seenInStack = new Set();   // alert ids the supervisor has already seen listed
+
   function renderPopups() {
-    const pending = openAlerts
+    const waiting = openAlerts
       .filter((a) => !isHandled(a))
       .sort((a, b) => (a.kind === "red" ? 0 : 1) - (b.kind === "red" ? 0 : 1) || a.started_at.localeCompare(b.started_at));
-    let html = pending.map((a) => {
-      const title = a.kind === "red"
-        ? `<span class="icon">▲</span> ${esc(a.worker_id)} is RED`
-        : `<span class="icon">↗</span> ${esc(a.worker_id)} predicted RED in ~${a.minutes ?? "?"} min` +
-          (speed > 1 && a.minutes ? ` (≈${Math.round((a.minutes * 60) / speed)} s)` : "");
-      return `<div class="popup kind-${a.kind}" role="alertdialog" aria-label="${esc(a.worker_id)} heat alert">
-          <div class="popup-title">${title}</div>
-          <div class="popup-meta">${esc(a.job)} · ${esc(a.site)} · alert since ${timeOf(a.started_at)}</div>
-          <div class="popup-msg">${esc(a.message || "")}</div>
-          <div class="actions">${actionButtons(a.worker_id, a, true)}</div>
-          <button type="button" class="link" data-show-card="${esc(a.worker_id)}">Show card</button>
-        </div>`;
-    }).join("");
-    if (pending.length && soundWanted && !soundReady()) {
-      html += `<div class="sound-hint">🔇 Alert sound is blocked by the browser. Click anywhere on the page to turn it on.</div>`;
+
+    // New alert (or one that just escalated to RED)? Un-hide the stack.
+    for (const a of waiting) {
+      const key = `${a.alert_id}:${a.kind}`;
+      if (!seenInStack.has(key)) { seenInStack.add(key); stackHidden = false; }
+    }
+
+    let html = "";
+    if (waiting.length) {
+      const reds = waiting.filter((a) => a.kind === "red").length;
+      const summary = `⚠ ${waiting.length} open alert${waiting.length > 1 ? "s" : ""}` +
+        (reds ? ` · ${reds} RED` : "");
+      html += `<div class="stack-head" role="status"><span>${summary}</span>
+        <button type="button" class="stack-btn" data-stack="${stackHidden ? "show" : "hide"}">${stackHidden ? "Show" : "Hide"}</button></div>`;
+    }
+    if (!stackHidden) {
+      const shown = stackExpanded ? waiting : waiting.slice(0, POPUPS_SHOWN);
+      html += shown.map(popupHTML).join("");
+      const more = waiting.length - shown.length;
+      if (more > 0) {
+        html += `<button type="button" class="stack-btn stack-more" data-stack="expand">+ ${more} more alert${more > 1 ? "s" : ""}: show all</button>`;
+      } else if (stackExpanded && waiting.length > POPUPS_SHOWN) {
+        html += `<button type="button" class="stack-btn stack-more" data-stack="collapse">Show fewer</button>`;
+      }
+      if (waiting.length && soundWanted && !soundReady()) {
+        html += `<div class="sound-hint">🔇 Alert sound is blocked by the browser. Click anywhere on the page to turn it on.</div>`;
+      }
     }
     setHTML(document.getElementById("alert-stack"), html);
+  }
+
+  function popupHTML(a) {
+    const now = a.current_level || "";
+    let title;
+    if (a.kind === "red") {
+      // An open RED alert stays open for a while after the worker calms down,
+      // so say "turned RED" and show where they are now.
+      title = now === "RED"
+        ? `<span class="icon">▲</span> ${esc(a.worker_id)} is RED`
+        : `<span class="icon">▲</span> ${esc(a.worker_id)} turned RED <span class="popup-now">now ${ICONS[now] || ""} ${esc(now)}</span>`;
+    } else {
+      title = `<span class="icon">↗</span> ${esc(a.worker_id)} predicted RED in ~${a.minutes ?? "?"} min` +
+        (speed > 1 && a.minutes ? ` (≈${Math.round((a.minutes * 60) / speed)} s)` : "");
+    }
+    return `<div class="popup kind-${a.kind}" role="alertdialog" aria-label="${esc(a.worker_id)} heat alert">
+        <div class="popup-title">${title}</div>
+        <div class="popup-meta">${esc(a.job)} · ${esc(a.site)} · alert since ${timeOf(a.started_at)}</div>
+        <div class="popup-msg">${esc(a.message || "")}</div>
+        <div class="actions">${actionButtons(a.worker_id, a, true)}</div>
+        <button type="button" class="link" data-show-card="${esc(a.worker_id)}">Show card</button>
+      </div>`;
   }
 
   document.addEventListener("click", (event) => {
     const link = event.target.closest("[data-show-card]");
     if (link) focusCard(link.dataset.showCard);
+    const stackBtn = event.target.closest("[data-stack]");
+    if (stackBtn) {
+      const what = stackBtn.dataset.stack;
+      if (what === "hide") stackHidden = true;
+      if (what === "show") stackHidden = false;
+      if (what === "expand") stackExpanded = true;
+      if (what === "collapse") stackExpanded = false;
+      renderPopups();
+    }
   });
 
   // ---- Action log table ----
@@ -778,7 +1292,7 @@
     }
     const body = rows.map((e) => {
       const d = describeLogEntry(e);
-      return `<tr><td class="t">${timeOf(e.time)}</td><td>${esc(e.worker_id)}</td>
+      return `<tr><td class="t">${timeOf(e.time)}</td><td class="w">${esc(e.worker_id)}</td>
         <td class="ev ${d.cls}">${d.ev}</td><td>${d.raw ? d.details : esc(d.details)}</td></tr>`;
     }).join("");
     setHTML(document.getElementById("log"),
@@ -818,6 +1332,7 @@
       pending = request;
       showMode(mode);
       setStatus("Switching… (takes a few seconds)");
+      setLive("warn", "SWITCHING");
       try {
         const res = await fetch("/api/mode", {
           method: "POST",
@@ -843,8 +1358,6 @@
   }
 
   // ---------------- Polling loop ----------------
-  let speed = 1;  // demo speed reported by the risk engine (15 in --demo mode)
-
   async function refresh() {
     try {
       // Fetch scores and the alert/action log at the same time.
@@ -859,8 +1372,9 @@
       openAlerts = data.alerts || [];
 
       speed = data.speed || 1;
-      document.getElementById("demo-badge").hidden = speed <= 1;
-      document.getElementById("demo-badge").textContent = `${speed}× demo speed`;
+      const demo = document.getElementById("demo-badge");
+      demo.hidden = speed <= 1;
+      demo.textContent = `⏩ ${speed}× DEMO`;
 
       renderSummary(data.workers);
       renderSites(data.sites);
@@ -883,19 +1397,25 @@
       const failed = data.live_weather_failed || [];
       if (pending) {
         setStatus("Switching… (takes a few seconds)");
+        setLive("warn", "SWITCHING");
       } else if (timedOut) {
         setStatus("The risk engine didn't confirm the switch. Is it running?", true);
+        setLive("down", "NO CONFIRM");
       } else if (ageSeconds > STALE_SECONDS) {
         setStatus(`Data is ${Math.round(ageSeconds)}s old. Is the risk engine running?`, true);
+        setLive("down", "STALE");
       } else if (actualMode === "live" && failed.length) {
         // Be honest: the switch says Live, but some sites couldn't get live weather.
         setStatus(`Live weather unavailable for ${failed.join(", ")}. Showing simulated summer values there.`, true);
+        setLive("warn", "LIVE · PARTIAL");
       } else {
-        const label = actualMode === "offline" ? "summer scenario" : "live weather";
-        setStatus(`Updated ${new Date(data.generated_at).toLocaleTimeString()} · ${label}`);
+        const label = actualMode === "offline" ? "summer scenario" : "live weather from Open-Meteo";
+        setStatus(`Last update ${new Date(data.generated_at).toLocaleTimeString()} · ${label}`);
+        setLive("live", "LIVE");
       }
     } catch (err) {
       setStatus("Waiting for the risk engine… " + err.message, true);
+      setLive("down", "OFFLINE");
     }
   }
 
@@ -907,6 +1427,8 @@
 
   setupMap();
   updateSoundButton();
+  tickClock();
+  setInterval(tickClock, 1000);
   loop();
 </script>
 </body>

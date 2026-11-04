@@ -419,8 +419,11 @@ class AlertManager:
                     alert["kind"] = "red"
                     alert["escalated_at"] = timestamp()
                     self._log("alert_escalated", alert, self._message(r, kind))
-                # Keep the latest details so the pop-up stays up to date.
-                alert["message"] = self._message(r, kind)
+                # Keep the latest details so the pop-up stays up to date, but never
+                # replace a RED alert's message with a "predicted" one (that would
+                # read "W13 is RED ... predicted to reach RED").
+                if kind == alert["kind"]:
+                    alert["message"] = self._message(r, kind)
                 alert["minutes"] = forecast["minutes"] if forecast and kind == "predicted_red" else None
             elif alert is not None:
                 since = self.calm_since.setdefault(wid, now)
@@ -429,6 +432,9 @@ class AlertManager:
                     del self.active[wid]
                     del self.calm_since[wid]
 
+            if wid in self.active:
+                # The worker's level right now (an open RED alert may be YELLOW again).
+                self.active[wid]["current_level"] = r["level"]
             r["alert"] = self.active.get(wid)
         return list(self.active.values())
 

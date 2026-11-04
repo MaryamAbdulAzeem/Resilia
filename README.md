@@ -58,8 +58,14 @@ results are the same every run: AI warnings appear within ~10 seconds and
 W08, W12 (and W03) turn RED after about 35-40 seconds. Forecasts on the cards
 show both simulated minutes and real seconds. `--speed 5` gives a custom speed.
 
-The dashboard shows a card and a map dot per worker, coloured green / yellow / red,
-and refreshes every 3 seconds. The switch at the top flips between **Live weather**
+The dashboard ("Qaiz", Arabic for the fierce heat of high summer) is a dark
+control-room design: live UAE clock, LIVE indicator, KPI tiles, a dark map with
+pulsing dots for at-risk workers, and a card per worker with heart-rate and
+skin-temperature bars (ticks mark the scoring thresholds). Numbers, bars and
+colours animate smoothly; animations switch off if the computer's
+"reduce motion" setting is on. Status badges always show an icon and word
+(▲ RED, ! YELLOW, ✓ GREEN), so colour is never the only signal.
+It refreshes every 3 seconds. The switch at the top flips between **Live weather**
 (Open-Meteo) and **Summer scenario** (simulated UAE summer afternoon). The map needs
 internet; cards work without it.
 
