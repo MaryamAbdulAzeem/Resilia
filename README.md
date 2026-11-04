@@ -63,6 +63,27 @@ and refreshes every 3 seconds. The switch at the top flips between **Live weathe
 (Open-Meteo) and **Summer scenario** (simulated UAE summer afternoon). The map needs
 internet; cards work without it.
 
+## Supervisor alerts and actions
+
+- **When:** the risk engine opens an alert when a worker turns RED or the AI
+  predicts RED. A predicted alert *escalates* if the worker then actually turns RED.
+  An alert clears once the worker has been calm for 2 simulated minutes (so a
+  worker flickering RED/YELLOW doesn't trigger a flood of alerts).
+- **Pop-ups** (bottom-right) for every unhandled alert, with **Dispatch water**,
+  **Schedule shade break** and **Acknowledge**. Any of these handles the alert.
+  After an escalation, the supervisor has to respond again.
+- **Sound:** three urgent beeps for RED, two softer beeps for predicted RED, and a
+  reminder every 30 s while a RED alert is unhandled. Browsers block sound until you
+  click the page once; the sound button in the header shows this.
+- **Card buttons:** every card has Dispatch water / Schedule shade break and shows
+  the last action taken.
+- **Action log** at the bottom: alerts raised, escalated and cleared, plus every
+  supervisor action with its response time. Stored in `data/alerts.jsonl`
+  (risk engine) and `data/actions.jsonl` (dashboard server). `--demo` starts with
+  an empty log; normal runs keep it.
+
+Actions are recorded but don't (yet) change the simulated worker.
+
 ## Running the risk engine
 
 Open a second terminal while the simulator is running:

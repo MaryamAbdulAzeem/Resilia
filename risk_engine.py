@@ -31,6 +31,11 @@ READINGS_FILE = Path("data") / "readings.jsonl"
 SCORES_FILE = Path("data") / "risk_scores.json"
 # The dashboard's live/offline switch writes here; the engine checks it every cycle.
 SETTINGS_FILE = Path("data") / "settings.json"
+# Every alert the engine raises (and when it escalates or clears) is logged here.
+ALERTS_FILE = Path("data") / "alerts.jsonl"
+# An alert stays open until the worker has been calm (not RED, not predicted RED)
+# for this long. Stops one worker flickering RED/YELLOW from raising many alerts.
+CLEAR_AFTER_SIM_SECONDS = 120
 
 # How many recent readings to average per worker.
 # 12 readings x 5 seconds = the last 1 minute. Averaging smooths out sensor noise.
@@ -310,7 +315,7 @@ def print_report(results):
     print(f"Summary: {counts['GREEN']} green, {counts['YELLOW']} yellow, {counts['RED']} red")
 
 
-def run_once(weather_cache, predictor=None, speed=1, settings_version=0):
+def run_once(weather_cache, predictor=None, speed=1, settings_version=0, alert_manager=None):
     # Keep 6 minutes of history: the last 1 minute is used for today's score,
     # the full 6 minutes lets the AI forecast see trends.
     readings_by_worker = load_recent_readings(history=HISTORY_READINGS)
@@ -350,6 +355,7 @@ def run_once(weather_cache, predictor=None, speed=1, settings_version=0):
         f = r.get("forecast")
         return (-r["score"], 0 if f else 1, f["minutes"] if f else 0, r["worker_id"])
     results.sort(key=sort_key)
+    alerts = alert_manager.update(results, speed) if alert_manager else []
     print_report(results)
 
     mode = "offline" if weather_cache.offline else "live"
@@ -362,10 +368,96 @@ def run_once(weather_cache, predictor=None, speed=1, settings_version=0):
         "live_weather_failed": sorted(s for s, v in sites.items()
                                       if mode == "live" and v["source"] != "open-meteo"),
         "speed": speed,
+        "alerts": alerts,   # open alerts for the supervisor
         "sites": sites,
         "workers": results,
     }
     write_json_safely(SCORES_FILE, output)
+
+
+class AlertManager:
+    """
+    Decides when to alert the supervisor.
+
+    An alert OPENS when a worker turns RED, or the AI predicts they'll reach RED.
+    If a "predicted" alert's worker then actually turns RED, it ESCALATES.
+    It CLEARS once the worker has been calm for CLEAR_AFTER_SIM_SECONDS.
+    Each of these moments is written to data/alerts.jsonl.
+    """
+
+    def __init__(self):
+        self.active = {}      # worker_id -> open alert
+        self.calm_since = {}  # worker_id -> when they stopped being at risk
+
+    def update(self, results, speed):
+        now = time.time()
+        for r in results:
+            wid = r["worker_id"]
+            forecast = r.get("forecast")
+            if r["level"] == "RED":
+                kind = "red"
+            elif forecast and forecast["level"] == "RED":
+                kind = "predicted_red"
+            else:
+                kind = None
+
+            alert = self.active.get(wid)
+            if kind:
+                self.calm_since.pop(wid, None)
+                if alert is None:
+                    alert = {
+                        "alert_id": f"{wid}-{int(now * 1000)}",
+                        "worker_id": wid,
+                        "site": r["site"],
+                        "job": r["job"],
+                        "kind": kind,
+                        "started_at": timestamp(),
+                    }
+                    self.active[wid] = alert
+                    self._log("alert", alert, self._message(r, kind))
+                elif kind == "red" and alert["kind"] == "predicted_red":
+                    alert["kind"] = "red"
+                    alert["escalated_at"] = timestamp()
+                    self._log("alert_escalated", alert, self._message(r, kind))
+                # Keep the latest details so the pop-up stays up to date.
+                alert["message"] = self._message(r, kind)
+                alert["minutes"] = forecast["minutes"] if forecast and kind == "predicted_red" else None
+            elif alert is not None:
+                since = self.calm_since.setdefault(wid, now)
+                if (now - since) * speed >= CLEAR_AFTER_SIM_SECONDS:
+                    self._log("alert_cleared", alert, f"{wid} is back to {r['level']}")
+                    del self.active[wid]
+                    del self.calm_since[wid]
+
+            r["alert"] = self.active.get(wid)
+        return list(self.active.values())
+
+    @staticmethod
+    def _message(r, kind):
+        if kind == "red":
+            return f"{r['worker_id']} is RED: " + ("; ".join(r["reasons"]) or "high heat stress")
+        f = r["forecast"]
+        return (f"{r['worker_id']} predicted to reach RED in ~{f['minutes']} min "
+                f"({f['probability']:.0%} likely)")
+
+    @staticmethod
+    def _log(event_type, alert, message):
+        entry = {
+            "time": timestamp(),
+            "type": event_type,
+            "alert_id": alert["alert_id"],
+            "worker_id": alert["worker_id"],
+            "kind": alert["kind"],
+            "message": message,
+        }
+        print(f"  ALERT LOG: {event_type}: {message}")
+        ALERTS_FILE.parent.mkdir(exist_ok=True)
+        with ALERTS_FILE.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(entry) + "\n")
+
+
+def timestamp():
+    return datetime.now().isoformat(timespec="seconds")
 
 
 def write_json_safely(path, data):
@@ -421,13 +513,15 @@ def main():
 
     print("Watching for new readings. Press Ctrl+C to stop.")
     settings = (args.offline, 0)
+    alert_manager = AlertManager()
     try:
         while True:
             # The dashboard switch (if it has been used) overrides --offline.
             settings = read_settings(previous=settings)
             offline, version = settings
             weather_cache.set_offline(offline)
-            run_once(weather_cache, predictor, speed=args.speed, settings_version=version)
+            run_once(weather_cache, predictor, speed=args.speed, settings_version=version,
+                     alert_manager=alert_manager)
             time.sleep(loop_seconds)
     except KeyboardInterrupt:
         print("\nStopped by user.")

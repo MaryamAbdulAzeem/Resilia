@@ -59,6 +59,9 @@ def main():
         # W08 and W12 only turn RED in summer heat, so start the demo there.
         # (You can still flip the switch on the dashboard.)
         write_mode("offline")
+        # Each demo starts with an empty alert/action log. (Normal runs keep it.)
+        for log in ("alerts.jsonl", "actions.jsonl"):
+            (DATA_DIR / log).unlink(missing_ok=True)
         print(f"DEMO MODE: {speed:g}x speed, summer scenario, seed {DEMO_SEED}.")
     elif speed != 1:
         print(f"Running at {speed:g}x speed.")

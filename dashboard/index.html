@@ -154,6 +154,78 @@
 
   .empty { color: var(--muted); padding: 24px; text-align: center; }
 
+  /* ---- Interventions: card buttons ---- */
+  .card.has-alert { box-shadow: 0 0 0 2px var(--red); }
+  .card-alert {
+    margin: 10px 0 0; font-size: 12.5px; font-weight: 600; color: var(--red);
+  }
+  .card-alert.handled { color: var(--text-2); font-weight: 400; }
+  .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .act {
+    font: inherit; font-size: 12.5px; padding: 6px 10px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--bg); color: var(--text);
+  }
+  .act:hover { border-color: var(--accent); }
+  .act:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .act:disabled { opacity: .55; cursor: wait; }
+  .act.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .last-action { color: var(--muted); font-size: 12px; margin-top: 6px; }
+
+  /* ---- Supervisor pop-ups ---- */
+  .alert-stack {
+    /* Bottom-right, so pop-ups never cover the header's switch and sound button */
+    position: fixed; z-index: 1000; right: 16px; bottom: 16px; width: min(360px, calc(100vw - 32px));
+    max-height: 60vh; overflow-y: auto; display: flex; flex-direction: column-reverse; gap: 10px;
+  }
+  .popup {
+    background: var(--surface); color: var(--text); border: 1px solid var(--border);
+    border-left: 6px solid var(--pc); border-radius: 12px; padding: 12px 14px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.22); animation: pop-in .2s ease-out;
+  }
+  .popup.kind-red { --pc: var(--red); }
+  .popup.kind-predicted_red { --pc: var(--yellow); }
+  .popup-title { font-weight: 700; font-size: 15px; display: flex; gap: 6px; align-items: baseline; }
+  .popup-title .icon { color: var(--pc); }
+  .popup-meta { color: var(--text-2); font-size: 12.5px; margin: 2px 0 6px; }
+  .popup-msg { font-size: 13px; }
+  .popup .link { font: inherit; font-size: 12px; background: none; border: 0; color: var(--accent);
+                 cursor: pointer; padding: 0; text-decoration: underline; }
+  .sound-hint { background: var(--surface); border: 1px dashed var(--border); border-radius: 10px;
+                padding: 8px 12px; font-size: 12.5px; color: var(--text-2); }
+  @keyframes pop-in { from { transform: translateY(-8px); opacity: 0; } to { transform: none; opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { .popup { animation: none; } }
+
+  .sound-btn {
+    font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 999px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text);
+  }
+  .sound-btn.locked { border-color: var(--red); color: var(--red); font-weight: 600; }
+
+  .toast {
+    position: fixed; z-index: 1001; left: 50%; bottom: 20px; transform: translateX(-50%);
+    background: #1b1b1a; color: #fff; padding: 8px 14px; border-radius: 8px; font-size: 13px;
+    box-shadow: 0 4px 14px rgba(0,0,0,.25);
+  }
+  /* Wide screens: bottom-left, away from the pop-ups on the right. Phones: centred. */
+  @media (min-width: 700px) { .toast { left: 24px; transform: none; } }
+
+  /* ---- Action log ---- */
+  .log-panel { margin-top: 16px; }
+  .log-head { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; justify-content: space-between; }
+  .log-filter { color: var(--text-2); font-size: 13px; display: inline-flex; gap: 6px; align-items: center; }
+  .log-wrap { overflow-x: auto; }
+  .log { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .log th { text-align: left; color: var(--muted); font-weight: 600; font-size: 12px;
+            border-bottom: 1px solid var(--border); padding: 6px 8px; white-space: nowrap; }
+  .log td { border-bottom: 1px solid var(--border); padding: 6px 8px; vertical-align: top; }
+  .log td.t { white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--text-2); }
+  .log .ev { font-weight: 600; white-space: nowrap; }
+  .log .ev-alert { color: var(--red); }
+  .log .ev-predicted { color: #c98a00; }
+  .log .ev-action { color: var(--accent); }
+  .log .ev-cleared { color: var(--green); }
+  .log .resp { color: var(--muted); font-size: 12px; }
+
   /* Map tooltip text uses the page's ink colours */
   .leaflet-tooltip { font: 12.5px/1.4 system-ui, "Segoe UI", sans-serif; }
 </style>
@@ -171,6 +243,7 @@
         <button type="button" data-mode="live" aria-pressed="false">Live weather</button>
         <button type="button" data-mode="offline" aria-pressed="false">Summer scenario</button>
       </div>
+      <button type="button" id="sound-btn" class="sound-btn">🔔 Sound</button>
       <span id="demo-badge" class="demo-badge" hidden></span>
       <span id="status" class="status">Connecting…</span>
     </div>
@@ -202,7 +275,19 @@
     <div class="cards" id="cards"><p class="empty">Waiting for data…</p></div>
   </section>
 
+  <section class="panel log-panel" aria-labelledby="log-title">
+    <div class="log-head">
+      <h2 id="log-title">Action log</h2>
+      <label class="log-filter"><input type="checkbox" id="log-actions-only"> Supervisor actions only</label>
+    </div>
+    <div class="log-wrap" id="log"><p class="empty">No alerts or actions yet.</p></div>
+  </section>
+
 </div>
+
+<!-- Supervisor pop-ups appear here (top-right; bottom on phones) -->
+<div id="alert-stack" class="alert-stack" role="region" aria-label="Supervisor alerts" aria-live="assertive"></div>
+<div id="toast" class="toast" role="status" hidden></div>
 
 <script>
   const POLL_MS = 3000;          // ask the server for new scores every 3 seconds
@@ -394,7 +479,7 @@
 
   function renderCards(workers) {
     const html = workers.map((w) => `
-      <article class="card lvl-${w.level}" id="card-${esc(w.worker_id)}">
+      <article class="card lvl-${w.level}${w.alert && !isHandled(w.alert) ? " has-alert" : ""}" id="card-${esc(w.worker_id)}">
         <div class="card-head">
           <span class="card-id">${esc(w.worker_id)}</span>
           <span class="badge">${ICONS[w.level]} ${w.level}</span>
@@ -408,8 +493,305 @@
         </div>
         ${renderForecast(w.forecast)}
         ${w.reasons.length ? `<ul class="reasons">${w.reasons.map((r) => `<li>${esc(r)}</li>`).join("")}</ul>` : ""}
+        ${renderCardAlert(w)}
+        <div class="actions">${actionButtons(w.worker_id, w.alert)}</div>
+        ${renderLastAction(w.worker_id)}
       </article>`).join("");
-    document.getElementById("cards").innerHTML = html || '<p class="empty">No workers yet.</p>';
+    setHTML(document.getElementById("cards"), html || '<p class="empty">No workers yet.</p>');
+  }
+
+  function renderCardAlert(w) {
+    if (!w.alert) return "";
+    const handledBy = handledAction(w.alert);
+    if (handledBy) {
+      return `<div class="card-alert handled">✓ Alert handled: ${esc(handledBy.label)} at ${timeOf(handledBy.time)}</div>`;
+    }
+    const what = w.alert.kind === "red" ? "turned RED" : "predicted to reach RED";
+    return `<div class="card-alert">⚠ Alert open: ${what} at ${timeOf(w.alert.started_at)}. Not yet handled.</div>`;
+  }
+
+  function renderLastAction(workerId) {
+    const last = lastActionFor(workerId);
+    return last ? `<div class="last-action">Last action: ${esc(last.label)} at ${timeOf(last.time)}</div>` : "";
+  }
+
+  // ================= Interventions =================
+  // The risk engine decides WHEN to alert (data.alerts). This page plays the
+  // sound, shows the pop-ups, sends supervisor actions to the server, and shows
+  // the log. An alert counts as "handled" once any action is logged for it.
+
+  const ACTION_LABELS = {
+    dispatch_water: "💧 Dispatch water",
+    shade_break: "⛱ Schedule shade break",
+    acknowledge: "Acknowledge",
+  };
+  let openAlerts = [];          // from the risk engine
+  let logEntries = [];          // alerts + actions from the server, newest first
+  const inFlight = new Set();   // buttons waiting for the server (stops double clicks)
+  let recentLocal = [];         // actions just clicked, kept until the server log has them
+  let lastScores = null;
+
+  function mergeLog(serverEntries) {
+    const now = Date.now();
+    const same = (a, b) => a.time === b.time && a.worker_id === b.worker_id && a.action === b.action;
+    recentLocal = recentLocal.filter((l) => l.until > now && !serverEntries.some((s) => same(s, l.entry)));
+    return [...recentLocal.map((l) => l.entry), ...serverEntries]
+      .sort((a, b) => b.time.localeCompare(a.time));
+  }
+
+  const timeOf = (iso) => new Date(iso).toLocaleTimeString();
+
+  // An alert is handled by any action logged for it. If a "predicted" alert later
+  // ESCALATED to actual RED, only actions taken after that count: the supervisor
+  // must respond again, because the earlier response wasn't enough.
+  function handledAction(alert) {
+    return logEntries.find((e) => e.type === "action" && e.alert_id === alert.alert_id &&
+      (!alert.escalated_at || e.time >= alert.escalated_at)) || null;
+  }
+  const isHandled = (alert) => !!handledAction(alert);
+  function lastActionFor(workerId) {
+    return logEntries.find((e) => e.type === "action" && e.action !== "acknowledge" && e.worker_id === workerId);
+  }
+
+  function actionButtons(workerId, alert, withAck = false) {
+    const alertId = alert ? alert.alert_id : "";
+    const keys = withAck ? ["dispatch_water", "shade_break", "acknowledge"] : ["dispatch_water", "shade_break"];
+    return keys.map((a) => {
+      const key = `${a}:${workerId}:${withAck ? "popup" : "card"}`;
+      const primary = alert && !isHandled(alert) && a !== "acknowledge" ? " primary" : "";
+      return `<button type="button" class="act${primary}" data-action="${a}" data-worker="${esc(workerId)}"
+                data-alert="${esc(alertId)}" data-key="${key}"${inFlight.has(`${a}:${workerId}`) ? " disabled" : ""}>
+                ${ACTION_LABELS[a]}</button>`;
+    }).join("");
+  }
+
+  // ---- Redrawing without losing clicks or keyboard focus ----
+  // The page redraws every 1-3 s. A redraw in the middle of a click would swallow
+  // the click, so we skip redraws while a mouse button / finger is held down, and
+  // put keyboard focus back on the same button afterwards.
+  let pointerIsDown = false;
+  document.addEventListener("pointerdown", () => { pointerIsDown = true; }, true);
+  document.addEventListener("pointerup", () => { pointerIsDown = false; }, true);
+  document.addEventListener("pointercancel", () => { pointerIsDown = false; }, true);
+
+  function setHTML(el, html) {
+    if (pointerIsDown || el._lastHTML === html) return;
+    const focusKey = el.contains(document.activeElement) ? document.activeElement.dataset.key : null;
+    el.innerHTML = html;
+    el._lastHTML = html;
+    if (focusKey) el.querySelector(`[data-key="${focusKey}"]`)?.focus();
+  }
+
+  // ---- Clicking an action button (on a card or a pop-up) ----
+  document.addEventListener("click", async (event) => {
+    const btn = event.target.closest("button[data-action]");
+    if (!btn) return;
+    const { action, worker } = btn.dataset;
+    const alertId = btn.dataset.alert || null;
+    const flightKey = `${action}:${worker}`;
+    if (inFlight.has(flightKey)) return;
+    inFlight.add(flightKey);
+    btn.disabled = true;
+    try {
+      const res = await fetch("/api/actions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ worker_id: worker, action, alert_id: alertId }),
+      });
+      const entry = await res.json();
+      if (!res.ok) throw new Error(entry.error || "failed");
+      // Show it straight away. Keep a local copy for a few seconds in case a
+      // refresh that started before the click comes back without it.
+      logEntries.unshift(entry);
+      recentLocal.push({ entry, until: Date.now() + 10000 });
+      showToast(`${entry.label} for ${worker}`);
+    } catch (err) {
+      showToast(`Couldn't log the action: ${err.message}`);
+    } finally {
+      inFlight.delete(flightKey);
+      renderInterventions();
+    }
+  });
+
+  let toastTimer = null;
+  function showToast(text) {
+    const el = document.getElementById("toast");
+    el.textContent = text;
+    el.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.hidden = true; }, 3000);
+  }
+
+  // ---- Alert sound (made in the browser, no sound files needed) ----
+  // Browsers block sound until the user clicks the page once. Until then the
+  // sound button turns red and says "Click to enable sound".
+  let soundWanted = true;
+  try { soundWanted = localStorage.getItem("hs-sound") !== "off"; } catch {}
+  let audio = null;
+
+  function soundReady() { return soundWanted && audio && audio.state === "running"; }
+
+  let lockedAtPress = false;  // was sound still blocked when this click/keypress started?
+
+  function unlockAudio() {
+    lockedAtPress = soundWanted && !soundReady();
+    if (!soundWanted) return;
+    try {
+      audio ||= new (window.AudioContext || window.webkitAudioContext)();
+      audio.resume().then(updateSoundButton);
+    } catch {}
+  }
+  document.addEventListener("pointerdown", unlockAudio, { capture: true });
+  document.addEventListener("keydown", unlockAudio, { capture: true });
+
+  function updateSoundButton() {
+    const btn = document.getElementById("sound-btn");
+    const locked = soundWanted && !soundReady();
+    btn.textContent = !soundWanted ? "🔕 Sound off" : locked ? "🔔 Click to enable sound" : "🔔 Sound on";
+    btn.classList.toggle("locked", locked);
+    btn.setAttribute("aria-pressed", String(soundWanted));
+  }
+
+  document.getElementById("sound-btn").addEventListener("click", () => {
+    // Use the state from when the press STARTED: the press itself unlocks audio,
+    // so by now it may already look "on", and we mustn't toggle it straight off.
+    if (lockedAtPress || (soundWanted && !soundReady())) {
+      lockedAtPress = false;
+      unlockAudio();                       // first click: just unlock it
+      setTimeout(() => playAlert("predicted_red"), 100);  // short test beep
+    } else {
+      soundWanted = !soundWanted;
+      try { localStorage.setItem("hs-sound", soundWanted ? "on" : "off"); } catch {}
+      if (soundWanted) { unlockAudio(); setTimeout(() => playAlert("predicted_red"), 100); }
+    }
+    updateSoundButton();
+    renderInterventions();
+  });
+
+  function beep(freq, start, duration, volume) {
+    const osc = audio.createOscillator();
+    const gain = audio.createGain();
+    osc.type = "triangle";
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(volume, start + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+    osc.connect(gain).connect(audio.destination);
+    osc.start(start);
+    osc.stop(start + duration + 0.05);
+  }
+
+  // RED: three urgent high beeps. Predicted RED: two softer, lower beeps.
+  function playAlert(kind) {
+    if (!soundReady()) return;
+    const t = audio.currentTime + 0.05;
+    if (kind === "red") {
+      [0, 0.22, 0.44].forEach((d) => beep(988, t + d, 0.16, 0.35));
+    } else {
+      [0, 0.3].forEach((d) => beep(660, t + d, 0.22, 0.2));
+    }
+  }
+
+  // Play a sound for each NEW alert, and again if a predicted alert turns RED.
+  // Unhandled RED alerts beep again every 30 seconds as a reminder.
+  const heardAlerts = new Map();  // alert_id -> kind we've already beeped for
+  let lastReminder = Date.now();
+  const REMINDER_MS = 30000;
+
+  function soundForAlerts() {
+    let toPlay = null;
+    for (const a of openAlerts) {
+      if (isHandled(a)) { heardAlerts.set(a.alert_id, a.kind); continue; }
+      const heard = heardAlerts.get(a.alert_id);
+      if (heard !== a.kind && !(heard === "red")) {
+        heardAlerts.set(a.alert_id, a.kind);
+        if (a.kind === "red" || !toPlay) toPlay = a.kind;  // RED beats predicted
+      }
+    }
+    if (toPlay) {
+      playAlert(toPlay);
+      lastReminder = Date.now();
+    } else if (openAlerts.some((a) => a.kind === "red" && !isHandled(a)) && Date.now() - lastReminder > REMINDER_MS) {
+      playAlert("red");
+      lastReminder = Date.now();
+    }
+  }
+
+  // ---- Supervisor pop-ups ----
+  function renderPopups() {
+    const pending = openAlerts
+      .filter((a) => !isHandled(a))
+      .sort((a, b) => (a.kind === "red" ? 0 : 1) - (b.kind === "red" ? 0 : 1) || a.started_at.localeCompare(b.started_at));
+    let html = pending.map((a) => {
+      const title = a.kind === "red"
+        ? `<span class="icon">▲</span> ${esc(a.worker_id)} is RED`
+        : `<span class="icon">↗</span> ${esc(a.worker_id)} predicted RED in ~${a.minutes ?? "?"} min` +
+          (speed > 1 && a.minutes ? ` (≈${Math.round((a.minutes * 60) / speed)} s)` : "");
+      return `<div class="popup kind-${a.kind}" role="alertdialog" aria-label="${esc(a.worker_id)} heat alert">
+          <div class="popup-title">${title}</div>
+          <div class="popup-meta">${esc(a.job)} · ${esc(a.site)} · alert since ${timeOf(a.started_at)}</div>
+          <div class="popup-msg">${esc(a.message || "")}</div>
+          <div class="actions">${actionButtons(a.worker_id, a, true)}</div>
+          <button type="button" class="link" data-show-card="${esc(a.worker_id)}">Show card</button>
+        </div>`;
+    }).join("");
+    if (pending.length && soundWanted && !soundReady()) {
+      html += `<div class="sound-hint">🔇 Alert sound is blocked by the browser. Click anywhere on the page to turn it on.</div>`;
+    }
+    setHTML(document.getElementById("alert-stack"), html);
+  }
+
+  document.addEventListener("click", (event) => {
+    const link = event.target.closest("[data-show-card]");
+    if (link) focusCard(link.dataset.showCard);
+  });
+
+  // ---- Action log table ----
+  function describeLogEntry(e) {
+    if (e.type === "alert") {
+      return e.kind === "red"
+        ? { cls: "ev-alert", ev: "▲ Alert: turned RED", details: e.message }
+        : { cls: "ev-predicted", ev: "↗ Alert: predicted RED", details: e.message };
+    }
+    if (e.type === "alert_escalated") return { cls: "ev-alert", ev: "▲ Escalated: now RED", details: e.message };
+    if (e.type === "alert_cleared") return { cls: "ev-cleared", ev: "✓ Alert cleared", details: e.message };
+    // Supervisor action: also show how quickly it followed the alert.
+    let details = e.worker_level ? `Worker was ${esc(e.worker_level)}` : "";
+    // Response time = seconds since the latest alarm for this alert (raised or escalated).
+    // logEntries is newest-first, so the first match at or before the action is the latest.
+    const raised = logEntries.find((x) => (x.type === "alert" || x.type === "alert_escalated") &&
+      x.alert_id === e.alert_id && x.time <= e.time);
+    if (raised) {
+      const secs = Math.max(0, Math.round((new Date(e.time) - new Date(raised.time)) / 1000));
+      const what = raised.type === "alert_escalated" ? "escalation" : "alert";
+      details += `<span class="resp"> · response time ${secs} s after ${what}</span>`;
+    }
+    return { cls: "ev-action", ev: esc(e.label), details, raw: true };
+  }
+
+  function renderLog() {
+    const actionsOnly = document.getElementById("log-actions-only").checked;
+    const rows = logEntries.filter((e) => !actionsOnly || e.type === "action").slice(0, 100);
+    if (!rows.length) {
+      setHTML(document.getElementById("log"), '<p class="empty">No alerts or actions yet.</p>');
+      return;
+    }
+    const body = rows.map((e) => {
+      const d = describeLogEntry(e);
+      return `<tr><td class="t">${timeOf(e.time)}</td><td>${esc(e.worker_id)}</td>
+        <td class="ev ${d.cls}">${d.ev}</td><td>${d.raw ? d.details : esc(d.details)}</td></tr>`;
+    }).join("");
+    setHTML(document.getElementById("log"),
+      `<table class="log"><thead><tr><th>Time</th><th>Worker</th><th>Event</th><th>Details</th></tr></thead>
+       <tbody>${body}</tbody></table>`);
+  }
+  document.getElementById("log-actions-only").addEventListener("change", renderLog);
+
+  // Redraw everything that depends on alerts or the log.
+  function renderInterventions() {
+    if (lastScores) renderCards(lastScores.workers);
+    renderPopups();
+    renderLog();
   }
 
   // ---------------- Weather switch ----------------
@@ -465,9 +847,16 @@
 
   async function refresh() {
     try {
-      const res = await fetch("/api/scores", { cache: "no-store" });
+      // Fetch scores and the alert/action log at the same time.
+      const [res, logRes] = await Promise.all([
+        fetch("/api/scores", { cache: "no-store" }),
+        fetch("/api/log", { cache: "no-store" }).catch(() => null),
+      ]);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "No data");
+      if (logRes && logRes.ok) logEntries = mergeLog((await logRes.json()).entries || []);
+      lastScores = data;
+      openAlerts = data.alerts || [];
 
       speed = data.speed || 1;
       document.getElementById("demo-badge").hidden = speed <= 1;
@@ -475,8 +864,9 @@
 
       renderSummary(data.workers);
       renderSites(data.sites);
-      renderCards(data.workers);
       updateMap(data);
+      renderInterventions();   // cards, pop-ups and log
+      soundForAlerts();
 
       // Weather switch: trust the engine's report, unless we're waiting on a click.
       actualMode = data.weather_mode;
@@ -516,6 +906,7 @@
   }
 
   setupMap();
+  updateSoundButton();
   loop();
 </script>
 </body>
