@@ -1,0 +1,3 @@
+# Keep Unix-style line endings in every text file, on every computer,
+# so Windows and Mac/Linux teammates don't see noisy "changes".
+* text=auto eol=lf

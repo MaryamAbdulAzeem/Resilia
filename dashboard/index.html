@@ -1,0 +1,522 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Heat-Stress Monitor</title>
+
+<!-- Leaflet: free map library. Needs internet; the page still works without it. -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<style>
+  /* ---- Colours (light mode, then dark mode) ---- */
+  :root {
+    --bg: #f4f4f2;
+    --surface: #fcfcfb;
+    --border: #e2e2de;
+    --text: #1b1b1a;
+    --text-2: #55554f;
+    --muted: #7a7a73;
+    --accent: #1f5fbf;
+    /* Status colours: always paired with an icon + label, never colour alone */
+    --green: #0ca30c;
+    --yellow: #fab219;
+    --red: #d03b3b;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111110;
+      --surface: #1a1a19;
+      --border: #2e2e2c;
+      --text: #ededea;
+      --text-2: #b5b5ae;
+      --muted: #8a8a83;
+      --accent: #6fa3f0;
+      color-scheme: dark;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 20px clamp(16px, 3vw, 32px) 40px;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 1280px; margin: 0 auto; }
+
+  /* ---- Header ---- */
+  header {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px;
+    justify-content: space-between; margin-bottom: 16px;
+  }
+  h1 { font-size: 22px; margin: 0; letter-spacing: -0.01em; }
+  .subtitle { color: var(--text-2); margin: 2px 0 0; }
+  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+
+  .switch {
+    display: inline-flex; border: 1px solid var(--border); border-radius: 10px;
+    background: var(--surface); padding: 3px;
+  }
+  .switch button {
+    font: inherit; border: 0; background: transparent; color: var(--text-2);
+    padding: 7px 14px; border-radius: 7px; cursor: pointer;
+  }
+  .switch button[aria-pressed="true"] { background: var(--accent); color: #fff; font-weight: 600; }
+  .switch button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .status { color: var(--muted); font-size: 13px; }
+  .demo-badge {
+    font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px;
+    border: 1px solid var(--accent); color: var(--accent);
+  }
+  [hidden] { display: none !important; }
+  .status.warn { color: var(--red); font-weight: 600; }
+
+  /* ---- Summary tiles ---- */
+  .summary {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px; margin-bottom: 16px;
+  }
+  .tile {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 12px 16px; display: flex; align-items: center; gap: 12px;
+  }
+  .tile .num { font-size: 30px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+  .tile .lbl { color: var(--text-2); }
+
+  /* ---- Map + weather ---- */
+  .top {
+    display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    gap: 16px; margin-bottom: 16px;
+  }
+  @media (max-width: 860px) { .top { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px 16px;
+  }
+  .panel h2 { font-size: 15px; margin: 0 0 10px; }
+  #map { height: 420px; border-radius: 8px; background: var(--bg); }
+  /* Site labels on the map: solid background and clear text so they stay readable */
+  .leaflet-tooltip.site-label {
+    background: #ffffff; color: #1b1b1a; border: 1px solid #b9b9b2; border-radius: 6px;
+    padding: 3px 8px; font-size: 12px; line-height: 1.35; box-shadow: 0 1px 3px rgba(0,0,0,.18);
+  }
+  .site-label-name { font-weight: 700; font-size: 13px; }
+  .map-fallback { padding: 40px 16px; color: var(--muted); text-align: center; }
+  .note { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
+
+  .site { padding: 10px 0; border-top: 1px solid var(--border); }
+  .site:first-of-type { border-top: 0; padding-top: 0; }
+  .site-name { font-weight: 600; display: flex; justify-content: space-between; gap: 8px; }
+  .site-wbgt { font-variant-numeric: tabular-nums; }
+  .site-detail { color: var(--text-2); font-size: 13px; }
+
+  /* ---- Worker cards ---- */
+  .cards {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px;
+  }
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-left: 6px solid var(--lvl);
+    border-radius: 12px; padding: 12px 14px; transition: box-shadow .2s;
+  }
+  .card.flash { box-shadow: 0 0 0 3px var(--accent); }
+  .card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .card-id { font-size: 18px; font-weight: 700; }
+  .card-meta { color: var(--text-2); font-size: 13px; margin: 2px 0 10px; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 5px; border-radius: 999px;
+    padding: 3px 10px; font-size: 12px; font-weight: 700; background: var(--lvl); color: #fff;
+  }
+  .lvl-YELLOW .badge { color: #0b0b0b; }
+  .metrics { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px 12px; }
+  .metric .k { color: var(--muted); font-size: 12px; }
+  .metric .v { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .forecast {
+    margin: 10px 0 0; padding: 6px 10px; border-radius: 8px; font-size: 13px; font-weight: 600;
+    border: 1px dashed var(--fc); color: var(--text); display: flex; gap: 6px; align-items: baseline;
+  }
+  .forecast .fc-icon { color: var(--fc); }
+  .forecast .fc-prob { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: auto; }
+  .fc-RED { --fc: var(--red); }
+  .fc-YELLOW { --fc: #c98a00; }
+  .tile.rising .num { color: var(--text); }
+  .tile.rising .ai { font-size: 18px; }
+  .reasons { margin: 10px 0 0; padding: 0; list-style: none; color: var(--text-2); font-size: 12.5px; }
+  .reasons li::before { content: "• "; color: var(--muted); }
+
+  .lvl-GREEN  { --lvl: var(--green); }
+  .lvl-YELLOW { --lvl: var(--yellow); }
+  .lvl-RED    { --lvl: var(--red); }
+
+  .empty { color: var(--muted); padding: 24px; text-align: center; }
+
+  /* Map tooltip text uses the page's ink colours */
+  .leaflet-tooltip { font: 12.5px/1.4 system-ui, "Segoe UI", sans-serif; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <h1>Heat-Stress Monitor</h1>
+      <p class="subtitle">15 outdoor workers across 4 UAE sites</p>
+    </div>
+    <div class="controls">
+      <div class="switch" role="group" aria-label="Weather source">
+        <button type="button" data-mode="live" aria-pressed="false">Live weather</button>
+        <button type="button" data-mode="offline" aria-pressed="false">Summer scenario</button>
+      </div>
+      <span id="demo-badge" class="demo-badge" hidden></span>
+      <span id="status" class="status">Connecting…</span>
+    </div>
+  </header>
+
+  <section class="summary" aria-label="Summary">
+    <div class="tile lvl-RED"><span class="badge">▲ RED</span><span class="num" id="count-RED">–</span><span class="lbl">danger</span></div>
+    <div class="tile lvl-YELLOW"><span class="badge">! YELLOW</span><span class="num" id="count-YELLOW">–</span><span class="lbl">caution</span></div>
+    <div class="tile lvl-GREEN"><span class="badge">✓ GREEN</span><span class="num" id="count-GREEN">–</span><span class="lbl">OK</span></div>
+    <div class="tile rising" title="Workers the AI forecast expects to reach a higher level within 15 minutes">
+      <span class="ai">↗</span><span class="num" id="count-rising">–</span><span class="lbl">rising (AI forecast, next 15 min)</span>
+    </div>
+  </section>
+
+  <section class="top">
+    <div class="panel">
+      <h2>Worker locations</h2>
+      <div id="map"></div>
+      <p class="note">Each dot is one worker, in a ring around their site. Dubai and Sharjah are close together, so their groups are pulled apart slightly; the dashed line points to the real location. Hover a dot for details, or click it to find the card.</p>
+    </div>
+    <div class="panel">
+      <h2>Site conditions</h2>
+      <div id="sites"><p class="empty">Waiting for data…</p></div>
+      <p class="note">WBGT is estimated from air temperature, humidity and sunlight.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="cards" id="cards"><p class="empty">Waiting for data…</p></div>
+  </section>
+
+</div>
+
+<script>
+  const POLL_MS = 3000;          // ask the server for new scores every 3 seconds
+  const STALE_SECONDS = 20;      // warn if the scores stop updating
+  const ICONS = { GREEN: "✓", YELLOW: "!", RED: "▲" };
+  const COLOURS = { GREEN: "#0ca30c", YELLOW: "#fab219", RED: "#d03b3b" };
+
+  let map = null;
+  const workerDots = {};         // worker_id -> map marker
+  const siteMarkers = {};        // site name -> map marker
+
+  // Make text safe to put inside HTML.
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  // ---------------- Map ----------------
+  function setupMap() {
+    if (typeof L === "undefined") {
+      document.getElementById("map").innerHTML =
+        '<p class="map-fallback">The map needs an internet connection to load. Cards and scores still work.</p>';
+      return;
+    }
+    map = L.map("map", { scrollWheelZoom: false }).setView([24.8, 55.0], 8);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 18,
+      attribution: "&copy; OpenStreetMap contributors",
+    }).addTo(map);
+    // Dot positions are worked out in screen pixels, so redo them after zooming.
+    map.on("zoomend", () => { if (lastData) updateMap(lastData); });
+  }
+
+  // Dubai and Sharjah are only ~20 km apart, so at this zoom their dot rings and
+  // labels collide. We nudge each group a few pixels apart (a dashed line points
+  // back to the real location) and put the labels on the outer sides.
+  const SITE_LAYOUT = {
+    "Dubai":     { dx: -42, dy: 14,  side: "left" },
+    "Sharjah":   { dx: 34,  dy: -34, side: "right" },
+    "Abu Dhabi": { dx: 0,   dy: 0,   side: "left" },
+    "Al Ain":    { dx: 0,   dy: 0,   side: "right" },
+  };
+  const RING_PX = 22;  // radius of each site's ring of worker dots, in pixels
+  const DOT_PX = 8;    // radius of a worker dot
+  let lastData = null;
+  let fitted = false;
+  const siteLines = {};   // site -> dashed line from real location to the dot group
+
+  // How far to nudge groups apart: fully when zoomed out, not at all once
+  // the cities are far enough apart on screen by themselves.
+  function nudgeScale() {
+    const z = map.getZoom();
+    return z <= 8 ? 1 : z === 9 ? 0.5 : 0;
+  }
+
+  // Screen-pixel maths: convert lat/lon to pixels, move, convert back.
+  function offsetLatLng(latlng, dx, dy) {
+    const z = map.getZoom();
+    const p = map.project(latlng, z);
+    return map.unproject(L.point(p.x + dx, p.y + dy), z);
+  }
+
+  function groupCentre(name, s) {
+    const layout = SITE_LAYOUT[name] || { dx: 0, dy: 0 };
+    const k = nudgeScale();
+    return offsetLatLng(L.latLng(s.lat, s.lon), layout.dx * k, layout.dy * k);
+  }
+
+  // Spread a site's workers evenly around a ring so their dots don't overlap.
+  function ringPosition(centre, index, total) {
+    const angle = (2 * Math.PI * index) / Math.max(total, 1) - Math.PI / 2;
+    return offsetLatLng(centre, RING_PX * Math.cos(angle), RING_PX * Math.sin(angle));
+  }
+
+  function updateMap(data) {
+    if (!map) return;
+    lastData = data;
+    const sites = data.sites || {};
+
+    // First time: zoom so all four sites (plus their labels) fit.
+    if (!fitted) {
+      const pts = Object.values(sites).filter((s) => s.lat != null).map((s) => [s.lat, s.lon]);
+      if (pts.length) {
+        map.fitBounds(pts, { padding: [120, 60], maxZoom: 9 });
+        fitted = true;
+      }
+    }
+
+    // Site markers: a small hollow circle at the real location, a dashed line to
+    // the (possibly nudged) dot group, and a label on the outer side of the group.
+    const centres = {};
+    for (const [name, s] of Object.entries(sites)) {
+      if (s.lat == null) continue;
+      const real = L.latLng(s.lat, s.lon);
+      const centre = groupCentre(name, s);
+      centres[name] = centre;
+      const side = (SITE_LAYOUT[name] || {}).side || "right";
+      const label = `<span class="site-label-name">${esc(name)}</span><br>WBGT ${s.wbgt_c.toFixed(1)}°C`;
+
+      if (!siteMarkers[name]) {
+        siteLines[name] = L.polyline([real, centre], {
+          color: "#55554f", weight: 1.5, dashArray: "3 4", interactive: false,
+        }).addTo(map);
+        L.circleMarker(real, {
+          radius: 4, color: "#55554f", weight: 2, fillColor: "#fff", fillOpacity: 1, interactive: false,
+        }).addTo(map);
+        // An invisible anchor at the group centre carries the label.
+        siteMarkers[name] = L.circleMarker(centre, { radius: 0, opacity: 0, interactive: false })
+          .addTo(map)
+          .bindTooltip(label, {
+            permanent: true, direction: side, className: "site-label",
+            offset: [(side === "left" ? -1 : 1) * (RING_PX + DOT_PX + 4), 0],
+          });
+      } else {
+        siteMarkers[name].setLatLng(centre).setTooltipContent(label);
+      }
+      siteLines[name].setLatLngs([real, centre]);
+    }
+
+    // Worker dots, grouped by site.
+    const bySite = {};
+    for (const w of data.workers) (bySite[w.site] ||= []).push(w);
+    for (const [site, workers] of Object.entries(bySite)) {
+      workers.sort((a, b) => a.worker_id.localeCompare(b.worker_id)); // stable ring order
+      workers.forEach((w, i) => {
+        if (!centres[site]) return;
+        const pos = ringPosition(centres[site], i, workers.length);
+        const tip =
+          `<b>${esc(w.worker_id)}</b> · ${ICONS[w.level]} ${w.level}<br>` +
+          `${esc(w.job)}, ${esc(w.site)}<br>` +
+          `Heart rate ${w.avg_heart_rate_bpm} bpm · Skin ${w.avg_skin_temp_c}°C<br>` +
+          `Activity: ${esc(w.activity_level)}` +
+          (w.forecast ? `<br><b>↗ ${forecastText(w.forecast)}</b>` : "");
+        let dot = workerDots[w.worker_id];
+        if (!dot) {
+          dot = L.circleMarker(pos, { radius: DOT_PX, weight: 2, color: "#fff", fillOpacity: 1 })
+            .addTo(map)
+            .on("click", () => focusCard(w.worker_id));
+          dot.bindTooltip("", { direction: "top", offset: [0, -8] });
+          workerDots[w.worker_id] = dot;
+        }
+        dot.setLatLng(pos);
+        dot.setStyle({ fillColor: COLOURS[w.level] });
+        dot.setTooltipContent(tip);
+        if (w.level === "RED") dot.bringToFront();
+      });
+    }
+  }
+
+  function focusCard(id) {
+    const card = document.getElementById("card-" + id);
+    if (!card) return;
+    card.scrollIntoView({ behavior: "smooth", block: "center" });
+    card.classList.add("flash");
+    setTimeout(() => card.classList.remove("flash"), 1500);
+  }
+
+  // ---------------- Cards, tiles, sites ----------------
+  function renderSummary(workers) {
+    for (const lvl of ["GREEN", "YELLOW", "RED"]) {
+      document.getElementById("count-" + lvl).textContent =
+        workers.filter((w) => w.level === lvl).length;
+    }
+    document.getElementById("count-rising").textContent = workers.filter((w) => w.forecast).length;
+  }
+
+  // "Predicted: RED in ~12 min" line, only when the AI expects risk to rise.
+  // At demo speed, also say how long that really is (e.g. 6 min at 15x = ~24 s).
+  function forecastText(f) {
+    const text = `Predicted: ${f.level} in ~${f.minutes} min`;
+    return speed > 1 ? `${text} (≈${Math.round((f.minutes * 60) / speed)} s at demo speed)` : text;
+  }
+  function renderForecast(f) {
+    if (!f) return "";
+    return `<div class="forecast fc-${f.level}" title="AI forecast: chance this worker reaches ${f.level} within ${f.minutes} minutes">
+      <span class="fc-icon">↗</span><span>${forecastText(f)}</span>
+      <span class="fc-prob">${Math.round(f.probability * 100)}% likely</span></div>`;
+  }
+
+  function renderSites(sites) {
+    const html = Object.entries(sites || {}).map(([name, s]) => `
+      <div class="site">
+        <div class="site-name"><span>${esc(name)}</span><span class="site-wbgt">WBGT ${s.wbgt_c.toFixed(1)}°C</span></div>
+        <div class="site-detail">
+          ${s.air_temp_c.toFixed(1)}°C air · ${Math.round(s.humidity_pct)}% humidity · ${Math.round(s.solar_w_m2)} W/m² sun
+          ${s.source === "simulated" ? " · <i>simulated</i>" : ""}
+        </div>
+      </div>`).join("");
+    document.getElementById("sites").innerHTML = html || '<p class="empty">No sites yet.</p>';
+  }
+
+  function renderCards(workers) {
+    const html = workers.map((w) => `
+      <article class="card lvl-${w.level}" id="card-${esc(w.worker_id)}">
+        <div class="card-head">
+          <span class="card-id">${esc(w.worker_id)}</span>
+          <span class="badge">${ICONS[w.level]} ${w.level}</span>
+        </div>
+        <div class="card-meta">${esc(w.job)} · ${esc(w.site)}</div>
+        <div class="metrics">
+          <div class="metric"><div class="k">Heart rate</div><div class="v">${w.avg_heart_rate_bpm} bpm</div></div>
+          <div class="metric"><div class="k">Skin temp</div><div class="v">${w.avg_skin_temp_c.toFixed(1)}°C</div></div>
+          <div class="metric"><div class="k">Activity</div><div class="v">${esc(w.activity_level)}</div></div>
+          <div class="metric"><div class="k">WBGT</div><div class="v">${w.wbgt_c.toFixed(1)}°C</div></div>
+        </div>
+        ${renderForecast(w.forecast)}
+        ${w.reasons.length ? `<ul class="reasons">${w.reasons.map((r) => `<li>${esc(r)}</li>`).join("")}</ul>` : ""}
+      </article>`).join("");
+    document.getElementById("cards").innerHTML = html || '<p class="empty">No workers yet.</p>';
+  }
+
+  // ---------------- Weather switch ----------------
+  // Rule: the switch shows the mode the risk engine ACTUALLY used for the scores
+  // on screen. The only exception is the few seconds after a click, while we wait
+  // for the engine to confirm. Each click gets a version number from the server;
+  // the engine reports which version it has applied, so an older result can't
+  // flip the switch back by mistake.
+  const SWITCH_TIMEOUT_MS = 45000;
+  let actualMode = null;   // what the engine last reported
+  let pending = null;      // { mode, version, since } while waiting for the engine
+
+  function showMode(mode) {
+    document.querySelectorAll(".switch button").forEach((b) =>
+      b.setAttribute("aria-pressed", String(b.dataset.mode === mode)));
+  }
+
+  document.querySelectorAll(".switch button").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const mode = btn.dataset.mode;
+      if (pending ? pending.mode === mode : actualMode === mode) return; // already there
+      // Version is unknown until the server answers; Infinity = "not confirmed yet".
+      const request = { mode, version: Infinity, since: Date.now() };
+      pending = request;
+      showMode(mode);
+      setStatus("Switching… (takes a few seconds)");
+      try {
+        const res = await fetch("/api/mode", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ weather_mode: mode }),
+        });
+        if (!res.ok) throw new Error("server said no");
+        const saved = await res.json();
+        if (pending === request) pending.version = saved.version;
+      } catch {
+        // The change never reached the server: put the switch back to the truth.
+        if (pending === request) pending = null;
+        showMode(actualMode);
+        setStatus("Couldn't change the weather mode: server not reachable", true);
+      }
+    });
+  });
+
+  function setStatus(text, warn = false) {
+    const el = document.getElementById("status");
+    el.textContent = text;
+    el.classList.toggle("warn", warn);
+  }
+
+  // ---------------- Polling loop ----------------
+  let speed = 1;  // demo speed reported by the risk engine (15 in --demo mode)
+
+  async function refresh() {
+    try {
+      const res = await fetch("/api/scores", { cache: "no-store" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "No data");
+
+      speed = data.speed || 1;
+      document.getElementById("demo-badge").hidden = speed <= 1;
+      document.getElementById("demo-badge").textContent = `${speed}× demo speed`;
+
+      renderSummary(data.workers);
+      renderSites(data.sites);
+      renderCards(data.workers);
+      updateMap(data);
+
+      // Weather switch: trust the engine's report, unless we're waiting on a click.
+      actualMode = data.weather_mode;
+      let timedOut = false;
+      if (pending && (data.settings_version ?? 0) >= pending.version) {
+        pending = null;  // the engine has applied our change (or a newer one)
+      } else if (pending && Date.now() - pending.since > SWITCH_TIMEOUT_MS) {
+        pending = null;  // gave up waiting: show what's really happening
+        timedOut = true;
+      }
+      showMode(pending ? pending.mode : actualMode);
+
+      const ageSeconds = (Date.now() - new Date(data.generated_at).getTime()) / 1000;
+      const failed = data.live_weather_failed || [];
+      if (pending) {
+        setStatus("Switching… (takes a few seconds)");
+      } else if (timedOut) {
+        setStatus("The risk engine didn't confirm the switch. Is it running?", true);
+      } else if (ageSeconds > STALE_SECONDS) {
+        setStatus(`Data is ${Math.round(ageSeconds)}s old. Is the risk engine running?`, true);
+      } else if (actualMode === "live" && failed.length) {
+        // Be honest: the switch says Live, but some sites couldn't get live weather.
+        setStatus(`Live weather unavailable for ${failed.join(", ")}. Showing simulated summer values there.`, true);
+      } else {
+        const label = actualMode === "offline" ? "summer scenario" : "live weather";
+        setStatus(`Updated ${new Date(data.generated_at).toLocaleTimeString()} · ${label}`);
+      }
+    } catch (err) {
+      setStatus("Waiting for the risk engine… " + err.message, true);
+    }
+  }
+
+  // Ask again every 3 s (every 1 s at demo speed, so changes don't lag behind).
+  async function loop() {
+    await refresh();
+    setTimeout(loop, speed > 1 ? 1000 : POLL_MS);
+  }
+
+  setupMap();
+  loop();
+</script>
+</body>
+</html>

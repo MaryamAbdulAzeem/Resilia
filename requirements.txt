@@ -1,0 +1,3 @@
+# Only needed for the AI risk forecast (train_model.py / predictor.py).
+# Everything else uses Python's built-in tools.
+scikit-learn==1.9.1
