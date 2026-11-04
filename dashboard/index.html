@@ -121,6 +121,16 @@
   .btn-pill:hover { border-color: var(--line-2); background: rgba(255, 255, 255, 0.07); }
   .btn-pill.locked { color: var(--red-text); border-color: rgba(var(--red-rgb), 0.5); animation: softPulse 2s ease-in-out infinite; }
   .demo-badge { color: #9cc0ff; border-color: rgba(var(--blue-rgb), 0.45); background: rgba(var(--blue-rgb), 0.1); }
+  .view-badge { color: var(--yellow-text); border-color: rgba(var(--yellow-rgb), 0.45); background: rgba(var(--yellow-rgb), 0.1); }
+  .share-pill {
+    font: inherit; font-size: 12px; font-weight: 600; letter-spacing: 0; cursor: pointer; max-width: 300px;
+    color: var(--green-text); border-color: rgba(var(--green-rgb), 0.4); background: rgba(var(--green-rgb), 0.08);
+  }
+  .share-pill span { overflow: hidden; text-overflow: ellipsis; }
+  /* View-only visitors see the weather mode but can't change it */
+  body.view-only .switch button { cursor: default; pointer-events: none; }
+  body.view-only .switch button[aria-pressed="false"] { opacity: .55; }
+  .view-note { margin-top: 10px; font-size: 12px; color: var(--muted); font-style: italic; }
 
   button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
@@ -459,6 +469,8 @@
     <div class="controls">
       <span id="live-pill" class="pill live" role="status"><span class="live-dot"></span><span id="live-text">CONNECTING</span></span>
       <span id="demo-badge" class="pill demo-badge" hidden></span>
+      <span id="view-badge" class="pill view-badge" hidden title="You're on the public link: you can watch, but actions are taken in the control room">👁 VIEW ONLY</span>
+      <button type="button" id="share-pill" class="pill share-pill" hidden title="Public view-only link for teammates. Click to copy."></button>
       <button type="button" id="sound-btn" class="btn-pill">🔔 Sound</button>
       <div class="clock" aria-label="Current time in the UAE">
         <span id="clock-time" class="clock-time">--:--:--</span>
@@ -1017,6 +1029,7 @@
   }
 
   function actionButtons(workerId, alert, withAck = false) {
+    if (viewOnly) return "";  // public link: watch only
     const alertId = alert ? alert.alert_id : "";
     const keys = withAck ? ["dispatch_water", "shade_break", "acknowledge"] : ["dispatch_water", "shade_break"];
     return keys.map((a) => {
@@ -1241,7 +1254,9 @@
         <div class="popup-title">${title}</div>
         <div class="popup-meta">${esc(a.job)} · ${esc(a.site)} · alert since ${timeOf(a.started_at)}</div>
         <div class="popup-msg">${esc(a.message || "")}</div>
-        <div class="actions">${actionButtons(a.worker_id, a, true)}</div>
+        ${viewOnly
+          ? `<div class="view-note">View-only link: the supervisor responds from the control room.</div>`
+          : `<div class="actions">${actionButtons(a.worker_id, a, true)}</div>`}
         <button type="button" class="link" data-show-card="${esc(a.worker_id)}">Show card</button>
       </div>`;
   }
@@ -1325,6 +1340,7 @@
 
   document.querySelectorAll(".switch button").forEach((btn) => {
     btn.addEventListener("click", async () => {
+      if (viewOnly) return;  // public link: watch only
       const mode = btn.dataset.mode;
       if (pending ? pending.mode === mode : actualMode === mode) return; // already there
       // Version is unknown until the server answers; Infinity = "not confirmed yet".
@@ -1419,6 +1435,39 @@
     }
   }
 
+  // ---------------- View-only mode & public link ----------------
+  // The server tells us whether this visitor came through the public link
+  // (view-only) and, on the laptop, what the public link is.
+  let viewOnly = false;
+  let shareUrl = null;
+
+  async function loadAccess() {
+    try {
+      const res = await fetch("/api/access", { cache: "no-store" });
+      const access = await res.json();
+      const wasViewOnly = viewOnly;
+      viewOnly = !!access.view_only;
+      shareUrl = access.share_url || null;
+      document.body.classList.toggle("view-only", viewOnly);
+      document.getElementById("view-badge").hidden = !viewOnly;
+      document.querySelector(".switch").setAttribute("aria-disabled", String(viewOnly));
+      const pill = document.getElementById("share-pill");
+      pill.hidden = !shareUrl;
+      if (shareUrl) pill.innerHTML = `🌐 <span>Shared: ${esc(shareUrl.replace("https://", ""))}</span>`;
+      if (wasViewOnly !== viewOnly) renderInterventions();
+    } catch {}
+  }
+
+  document.getElementById("share-pill").addEventListener("click", async () => {
+    if (!shareUrl) return;
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      showToast("✓ Public link copied. Paste it in your team chat.");
+    } catch {
+      showToast(shareUrl);  // copying blocked: show it so it can be read out
+    }
+  });
+
   // Ask again every 3 s (every 1 s at demo speed, so changes don't lag behind).
   async function loop() {
     await refresh();
@@ -1429,7 +1478,10 @@
   updateSoundButton();
   tickClock();
   setInterval(tickClock, 1000);
-  loop();
+  // Check access first (so view-only visitors never see buttons), then start.
+  // Re-check every 10 s: the public link appears a few seconds after start-up.
+  loadAccess().then(loop);
+  setInterval(loadAccess, 10000);
 </script>
 </body>
 </html>

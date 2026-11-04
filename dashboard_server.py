@@ -9,6 +9,11 @@ It does three things:
   POST /api/actions    -> a supervisor clicked "Dispatch water", "Schedule shade break"
                           or "Acknowledge"; saved to data/actions.jsonl
   GET  /api/log        -> alerts (from the risk engine) + supervisor actions, newest first
+  GET  /api/access     -> is this visitor view-only? (+ the public link, for the laptop)
+
+View-only mode: visitors coming through the public Cloudflare link can watch
+but not change anything (no action buttons, no weather switch). Only people
+using the dashboard on this laptop (http://localhost:8000) have full control.
 
 Run it with:  python dashboard_server.py
 Then open:    http://localhost:8000
@@ -31,6 +36,12 @@ SCORES_FILE = BASE_DIR / "data" / "risk_scores.json"
 SETTINGS_FILE = BASE_DIR / "data" / "settings.json"
 ALERTS_FILE = BASE_DIR / "data" / "alerts.jsonl"    # written by the risk engine
 ACTIONS_FILE = BASE_DIR / "data" / "actions.jsonl"  # written here, when supervisors click
+SHARE_URL_FILE = BASE_DIR / "data" / "share_url.txt"  # written by run_all.py --share
+
+# Cloudflare adds these headers to every visit that comes through its tunnel.
+# Visitors can't remove them, and this server only accepts connections from
+# this computer, so a request WITHOUT them really is from this laptop.
+TUNNEL_HEADERS = ("Cf-Connecting-Ip", "Cf-Ray", "Cdn-Loop")
 
 # The only actions a supervisor can log, and how they read in the log.
 ACTIONS = {
@@ -121,8 +132,26 @@ def write_mode(mode):
         return settings
 
 
+def read_share_url():
+    try:
+        return SHARE_URL_FILE.read_text(encoding="utf-8").strip() or None
+    except OSError:
+        return None
+
+
 class DashboardHandler(SimpleHTTPRequestHandler):
+    def is_public_visitor(self):
+        """True if this request came in through the public Cloudflare link."""
+        return any(h in self.headers for h in TUNNEL_HEADERS)
+
     def do_GET(self):
+        if self.path.startswith("/api/access"):
+            public = self.is_public_visitor()
+            return self.send_json({
+                "view_only": public,
+                # Only the laptop is told the public link (to show and share it).
+                "share_url": None if public else read_share_url(),
+            })
         if self.path.startswith("/api/scores"):
             try:
                 body = SCORES_FILE.read_bytes()
@@ -148,6 +177,10 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             return {}
 
     def do_POST(self):
+        # View-only: nobody on the public link can change anything.
+        if self.is_public_visitor():
+            return self.send_json({"error": "This is a view-only link. "
+                                            "Actions can only be taken on the control-room laptop."}, 403)
         if self.path.startswith("/api/actions"):
             return self.handle_action()
         if not self.path.startswith("/api/mode"):

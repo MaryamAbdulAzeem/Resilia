@@ -69,6 +69,26 @@ It refreshes every 3 seconds. The switch at the top flips between **Live weather
 (Open-Meteo) and **Summer scenario** (simulated UAE summer afternoon). The map needs
 internet; cards work without it.
 
+## Sharing a public link (view-only)
+
+```
+python run_all.py --demo --share
+```
+
+Also starts a free Cloudflare quick tunnel and prints a temporary public link
+(`https://<random-words>.trycloudflare.com`). It also appears as a green
+"🌐 Shared" pill on the laptop's dashboard (click to copy it).
+
+- **View-only:** anyone opening the public link can watch everything but can't
+  press action buttons or change the weather. The server refuses changes from
+  the tunnel (it recognises Cloudflare's headers); only `http://localhost:8000`
+  on the laptop has full control.
+- **Temporary:** the link stops when you press `Ctrl+C`, and each run gets a new
+  address. If the link drops, `run_all.py` makes a new one (up to 3 times) and
+  prints it; the local dashboard keeps running either way.
+- Needs `cloudflared`: `winget install --id Cloudflare.cloudflared -e`.
+- Keep the laptop awake and online while sharing.
+
 ## Supervisor alerts and actions
 
 - **When:** the risk engine opens an alert when a worker turns RED or the AI
