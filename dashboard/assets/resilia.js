@@ -209,27 +209,41 @@
   document.addEventListener("pointerdown", unlockAudio, { capture: true });
   document.addEventListener("keydown", unlockAudio, { capture: true });
 
-  function beep(freq, start, duration, volume, type = "triangle") {
+  // Gentle chime: a pure (sine) tone that fades in softly and rings out slowly,
+  // through a filter that takes the edge off. No harsh or high-pitched beeps.
+  function chime(freq, start, volume) {
     const osc = audio.createOscillator();
     const gain = audio.createGain();
-    osc.type = type; osc.frequency.value = freq;
+    const soften = audio.createBiquadFilter();
+    osc.type = "sine";
+    osc.frequency.value = freq;
+    soften.type = "lowpass";
+    soften.frequency.value = 1800;
     gain.gain.setValueAtTime(0.0001, start);
-    gain.gain.exponentialRampToValueAtTime(volume, start + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
-    osc.connect(gain).connect(audio.destination);
-    osc.start(start); osc.stop(start + duration + 0.05);
+    gain.gain.exponentialRampToValueAtTime(volume, start + 0.04);   // soft start
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + 1.2);    // slow fade
+    osc.connect(soften).connect(gain).connect(audio.destination);
+    osc.start(start);
+    osc.stop(start + 1.3);
   }
-  // SOS: two-tone siren. RED: three urgent beeps. Predicted RED: two soft beeps.
-  R.playAlert = (kind) => {
+
+  // Three calm sounds, still easy to tell apart (all below ~700 Hz, played once):
+  //   predicted RED: one soft note
+  //   RED:           two notes, rising
+  //   SOS:           three notes, rising (the most noticeable, still calm)
+  // Reminders for unhandled alerts play at a lower volume.
+  R.playAlert = (kind, reminder = false) => {
     if (!R.soundReady()) return;
     const t = audio.currentTime + 0.05;
-    if (kind === "sos") [0, 0.5, 1.0].forEach((d) => { beep(1046, t + d, 0.22, 0.4); beep(784, t + d + 0.25, 0.22, 0.4); });
-    else if (kind === "red") [0, 0.22, 0.44].forEach((d) => beep(988, t + d, 0.16, 0.35));
-    else [0, 0.3].forEach((d) => beep(660, t + d, 0.22, 0.2));
+    const v = reminder ? 0.6 : 1;
+    if (kind === "sos") [392, 523, 659].forEach((f, i) => chime(f, t + i * 0.28, 0.13 * v));
+    else if (kind === "red") [440, 587].forEach((f, i) => chime(f, t + i * 0.3, 0.11 * v));
+    else chime(523, t, 0.08 * v);
   };
 
   const heard = new Map();
   let lastReminder = Date.now();
+  const REMINDER_MS = 60000;
   const RANK = { sos: 3, red: 2, predicted_red: 1 };
   function soundForAlerts() {
     let toPlay = null;
@@ -241,9 +255,10 @@
         if (!toPlay || RANK[a.kind] > RANK[toPlay]) toPlay = a.kind;
       }
     }
+    // Reminder for urgent alerts nobody has handled: once a minute, quieter.
     const urgent = R.alerts().find((a) => (a.kind === "sos" || a.kind === "red") && !R.isHandled(a));
     if (toPlay) { R.playAlert(toPlay); lastReminder = Date.now(); }
-    else if (urgent && Date.now() - lastReminder > 30000) { R.playAlert(urgent.kind); lastReminder = Date.now(); }
+    else if (urgent && Date.now() - lastReminder > REMINDER_MS) { R.playAlert(urgent.kind, true); lastReminder = Date.now(); }
   }
 
   function updateSoundButton() {
