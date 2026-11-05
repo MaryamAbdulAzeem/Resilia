@@ -47,10 +47,17 @@ TUNNEL_HEADERS = ("Cf-Connecting-Ip", "Cf-Ray", "Cdn-Loop")
 ACTIONS = {
     "dispatch_water": "Water dispatched",
     "shade_break": "Shade break scheduled",
+    "buzz": "Helmet buzzed again",          # vibrates the helmet so the worker notices
     "acknowledge": "Alert acknowledged",
+    # SOS help-request responses
+    "on_my_way": "Supervisor on the way",
+    "send_first_aider": "First-aider sent",
+    # The prototype can't phone anyone: this only records that the supervisor
+    # chose to call emergency services. The page tells them to dial 999 themselves.
+    "call_999": "999 emergency call (made by supervisor)",
 }
 WORKER_ID = re.compile(r"^W\d{2}$")
-ALERT_ID = re.compile(r"^W\d{2}-\d{1,16}$")
+ALERT_ID = re.compile(r"^W\d{2}-(sos-)?\d{1,16}$")
 LOG_LIMIT = 200  # newest entries sent to the dashboard
 
 settings_lock = threading.Lock()  # two clicks at once can't both write the file
@@ -80,8 +87,9 @@ def current_worker_status(worker_id):
         return {}
     for w in scores.get("workers", []):
         if w["worker_id"] == worker_id:
-            return {"level": w["level"], "forecast": w.get("forecast")}
-    return {}
+            return {"level": w["level"], "status": w.get("status"),
+                    "forecast": w.get("forecast"), "sim_time": scores.get("sim_time")}
+    return {"sim_time": scores.get("sim_time")}
 
 
 def log_action(worker_id, action, alert_id):
@@ -94,6 +102,8 @@ def log_action(worker_id, action, alert_id):
         "worker_id": worker_id,
         "alert_id": alert_id,
         "worker_level": status.get("level"),
+        "worker_status": status.get("status"),
+        "sim_time": status.get("sim_time"),  # simulated clock, for display
     }
     with actions_lock:
         ACTIONS_FILE.parent.mkdir(exist_ok=True)

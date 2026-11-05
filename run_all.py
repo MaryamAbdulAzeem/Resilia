@@ -35,6 +35,9 @@ DEMO_SPEED = 15
 # Seed 15 was chosen by testing: with it, W08 and W12 turn RED after about
 # 10 simulated minutes (~40 real seconds at 15x), so the AI forecast appears first.
 DEMO_SEED = 15
+# With this start time and seed, W08 turns RED at ~33 s, W12 at ~40 s, and the
+# first SOS (W02) comes at ~29 s (checked by replaying the simulation).
+DEMO_START = "11:30"
 
 # Where winget installs cloudflared, in case it isn't on PATH yet.
 CLOUDFLARED_PATHS = [
@@ -110,7 +113,8 @@ def main():
     speed = args.speed or (DEMO_SPEED if args.demo else 1)
     simulator_args = ["simulator.py", "--speed", str(speed)]
     if args.demo:
-        simulator_args += ["--seed", str(DEMO_SEED)]
+        # Start the simulated clock late morning, as the day heats up.
+        simulator_args += ["--seed", str(DEMO_SEED), "--start", DEMO_START]
 
     programs = [
         ("simulator", simulator_args),

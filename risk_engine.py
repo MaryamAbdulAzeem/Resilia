@@ -22,10 +22,11 @@ import sys
 import time
 import urllib.request
 from collections import defaultdict, deque
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
-from predictor import HISTORY_READINGS, load_predictor
+import simulator  # for the simulated clock, time-of-day sun, and UAE time zone
+from predictor import HISTORY_READINGS, READINGS_PER_MINUTE, load_predictor
 
 READINGS_FILE = Path("data") / "readings.jsonl"
 SCORES_FILE = Path("data") / "risk_scores.json"
@@ -136,7 +137,12 @@ class WeatherCache:
             self.cache = {}
             print(f"  Weather mode switched to {'OFFLINE summer scenario' if offline else 'LIVE'}.")
 
-    def get(self, site, fallback_temp):
+    def get(self, site, fallback_temp, sim_hour=None):
+        # Summer scenario: weather comes from the simulator (its air temperature
+        # follows the simulated time of day), so work it out fresh every time.
+        if self.offline:
+            return simulated_weather(fallback_temp, sim_hour)
+
         now = time.time()
         cached = self.cache.get(site)
         if cached and now - cached[0] < WEATHER_REFRESH_SECONDS:
@@ -151,20 +157,41 @@ class WeatherCache:
 
         fetched_at = now
         if weather is None:
-            # Fallback: use the simulator's air temperature and assume a typical
-            # UAE summer afternoon (30% humidity, strong sun).
-            weather = {
-                "air_temp_c": fallback_temp,
-                "humidity_pct": 30,
-                "solar_w_m2": 800,
-                "observed_at": None,
-                "source": "simulated",
-            }
-            if not self.offline:
-                # Live weather failed: try again in 1 minute, not 10.
-                fetched_at = now - WEATHER_REFRESH_SECONDS + 60
+            weather = simulated_weather(fallback_temp, sim_hour)
+            # Live weather failed: try again in 1 minute, not 10.
+            fetched_at = now - WEATHER_REFRESH_SECONDS + 60
         self.cache[site] = (fetched_at, weather)
         return weather
+
+
+def simulated_weather(air_temp, sim_hour=None):
+    """Summer scenario: the simulator's air temperature, dry air (30%), and sun for the time of day."""
+    return {
+        "air_temp_c": air_temp,
+        "humidity_pct": 30,
+        "solar_w_m2": round(simulator.sun_w_m2(sim_hour)) if sim_hour is not None else 800,
+        "observed_at": None,
+        "source": "simulated",
+    }
+
+
+def sun_times(day, summer=False, lat=24.45, lon=54.38):
+    """
+    Approximate sunrise and sunset (UAE time) for Abu Dhabi, for the heat arc.
+    The summer scenario uses midsummer's day. Accurate to about 10 minutes.
+    """
+    if summer:
+        day = day.replace(month=6, day=21)
+    doy = day.timetuple().tm_yday
+    decl = math.radians(23.44) * math.sin(2 * math.pi * (284 + doy) / 365)
+    b = 2 * math.pi * (doy - 81) / 364
+    eot_min = 9.87 * math.sin(2 * b) - 7.53 * math.cos(b) - 1.5 * math.sin(b)  # equation of time
+    cos_h = (math.sin(math.radians(-0.83)) - math.sin(math.radians(lat)) * math.sin(decl)) / (
+        math.cos(math.radians(lat)) * math.cos(decl))
+    half_day_h = math.degrees(math.acos(max(-1, min(1, cos_h)))) / 15
+    noon_h = 12 + (60 - lon) * 4 / 60 - eot_min / 60   # GST is UTC+4 (60 degrees east)
+    fmt = lambda h: f"{int(h):02d}:{int(round((h % 1) * 60)) % 60:02d}"
+    return {"sunrise": fmt(noon_h - half_day_h), "sunset": fmt(noon_h + half_day_h)}
 
 
 # ---------------------------------------------------------------------------
@@ -279,6 +306,10 @@ def score_worker(readings, weather):
         "avg_skin_temp_c": round(avg_skin, 1),
         "activity_level": activity,
         "wbgt_c": round(wbgt, 1),
+        "wbgt_limit": limit,
+        "env_points": env_points,
+        "hr_points": hr_points,
+        "skin_points": skin_points,
         "air_temp_c": weather["air_temp_c"],
         "humidity_pct": weather["humidity_pct"],
         "solar_w_m2": weather["solar_w_m2"],
@@ -315,7 +346,81 @@ def print_report(results):
     print(f"Summary: {counts['GREEN']} green, {counts['YELLOW']} yellow, {counts['RED']} red")
 
 
-def run_once(weather_cache, predictor=None, speed=1, settings_version=0, alert_manager=None):
+def crew_status(r):
+    """
+    The plain-language status shown to supervisors:
+      act    "Act now"  - pressed SOS, is RED, or the AI predicts RED
+      rising "Rising"   - body signs of strain (heart rate / skin temp) or a rising forecast
+      steady "Steady"   - none of the above (it may still be a hot site: see WBGT)
+    """
+    f = r.get("forecast")
+    if r.get("sos_pressed_at"):
+        return "act"
+    if r["level"] == "RED" or (f and f["level"] == "RED"):
+        return "act"
+    if f or r["hr_points"] + r["skin_points"] > 0:
+        return "rising"
+    return "steady"
+
+
+def trend_5m(history, key):
+    """How much a reading rose (+) or fell (-) over the last 5 minutes (1-minute averages)."""
+    per_min = READINGS_PER_MINUTE
+    if len(history) < per_min * 2:
+        return 0.0
+    now = history[-per_min:]
+    before = history[-HISTORY_READINGS:-HISTORY_READINGS + per_min] if len(history) >= HISTORY_READINGS else history[:per_min]
+    avg = lambda rows: sum(r[key] for r in rows) / len(rows)
+    return round(avg(now) - avg(before), 1)
+
+
+class SiteHistory:
+    """Keeps one WBGT point per site per simulated minute, for the trend chart."""
+
+    MAX_POINTS = 12 * 60   # up to 12 simulated hours
+    SEND_POINTS = 180      # send the last 3 hours to the dashboard
+
+    def __init__(self):
+        self.points = defaultdict(list)  # site -> [[ "HH:MM", wbgt, air ], ...]
+
+    def add(self, site, sim_time, wbgt, air):
+        if not sim_time:
+            return
+        minute = sim_time[11:16]  # "HH:MM"
+        pts = self.points[site]
+        if pts and pts[-1][0] == minute:
+            pts[-1] = [minute, wbgt, air]
+        else:
+            pts.append([minute, wbgt, air])
+            del pts[:-self.MAX_POINTS]
+
+    def recent(self, site):
+        return self.points[site][-self.SEND_POINTS:]
+
+
+def device_summary(workers, latest_readings):
+    """Helmet connection summary for the 'site gateways' tile."""
+    now = datetime.now(timezone.utc)
+    ages = []
+    for r in latest_readings:
+        try:
+            ages.append((now - datetime.fromisoformat(r["timestamp"])).total_seconds())
+        except (KeyError, ValueError):
+            pass
+    connected = sum(1 for a in ages if a < 30)
+    batteries = [w["battery_pct"] for w in workers if w.get("battery_pct") is not None]
+    return {
+        "helmets": len(workers),
+        "connected": connected,
+        "gateways": sorted({w["gateway"] for w in workers if w.get("gateway")}),
+        "last_sync_s": round(min(ages)) if ages else None,
+        "avg_battery_pct": round(sum(batteries) / len(batteries)) if batteries else None,
+        "low_battery": sorted(w["worker_id"] for w in workers if (w.get("battery_pct") or 100) < 20),
+    }
+
+
+def run_once(weather_cache, predictor=None, speed=1, settings_version=0, alert_manager=None,
+             site_history=None):
     # Keep 6 minutes of history: the last 1 minute is used for today's score,
     # the full 6 minutes lets the AI forecast see trends.
     readings_by_worker = load_recent_readings(history=HISTORY_READINGS)
@@ -323,22 +428,39 @@ def run_once(weather_cache, predictor=None, speed=1, settings_version=0, alert_m
         print(f"No readings found in {READINGS_FILE}. Start the simulator first: python simulator.py")
         return
 
+    # The simulator's clock (falls back to real time for old readings without one).
+    latest_all = [h[-1] for h in readings_by_worker.values()]
+    sim_time = max((r.get("sim_time") or "" for r in latest_all), default="") or \
+        datetime.now(simulator.GST).isoformat(timespec="seconds")
+    sim_dt = datetime.fromisoformat(sim_time)
+    sim_hour = simulator.hour_of(sim_dt)
+
     results = []
     sites = {}
     for worker_id in sorted(readings_by_worker):
         history = readings_by_worker[worker_id]
         latest = history[-1]
         site = latest["site"]
-        weather = weather_cache.get(site, latest.get("air_temp_c", 40.0))
+        weather = weather_cache.get(site, latest.get("air_temp_c", 40.0), sim_hour)
         result = score_worker(history[-WINDOW:], weather)
         result["lat"], result["lon"] = SITE_COORDS.get(site, (None, None))
+
+        # Helmet details from the latest reading.
+        for key in ("helmet_id", "gateway", "zone", "battery_pct", "sos_pressed_at", "motionless_s"):
+            result[key] = latest.get(key)
+        result["sim_time"] = latest.get("sim_time")
+        result["hr_change_5m"] = trend_5m(history, "heart_rate_bpm")
+        result["skin_change_5m"] = trend_5m(history, "skin_temp_c")
 
         # AI forecast: will this worker's risk rise in the next 15 minutes?
         result["forecast"] = None
         if predictor is not None:
             wbgt = estimate_wbgt(weather["air_temp_c"], weather["humidity_pct"], weather["solar_w_m2"])
             result["forecast"] = predictor.forecast(history, wbgt, result["level"], result["score"])
+        result["status"] = crew_status(result)
         results.append(result)
+        if site_history is not None:
+            site_history.add(site, sim_time, result["wbgt_c"], weather["air_temp_c"])
         sites[site] = {
             "lat": result["lat"],
             "lon": result["lon"],
@@ -348,6 +470,7 @@ def run_once(weather_cache, predictor=None, speed=1, settings_version=0, alert_m
             "wbgt_c": result["wbgt_c"],
             "source": weather["source"],
             "observed_at": weather["observed_at"],
+            "history": site_history.recent(site) if site_history is not None else [],
         }
 
     # Most at-risk workers first; among equal scores, rising forecasts first (soonest first).
@@ -355,12 +478,15 @@ def run_once(weather_cache, predictor=None, speed=1, settings_version=0, alert_m
         f = r.get("forecast")
         return (-r["score"], 0 if f else 1, f["minutes"] if f else 0, r["worker_id"])
     results.sort(key=sort_key)
-    alerts = alert_manager.update(results, speed) if alert_manager else []
+    alerts = alert_manager.update(results, speed, sim_time) if alert_manager else []
     print_report(results)
 
     mode = "offline" if weather_cache.offline else "live"
     output = {
         "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "sim_time": sim_time,                     # the simulator's clock (UAE time)
+        "sun": sun_times(sim_dt.date(), summer=(mode == "offline")),
+        "devices": device_summary(results, latest_all),
         "weather_mode": mode,
         # Which switch change this result reflects (the dashboard waits for it).
         "settings_version": settings_version,
@@ -386,13 +512,47 @@ class AlertManager:
     """
 
     def __init__(self):
-        self.active = {}      # worker_id -> open alert
+        self.active = {}      # worker_id -> open heat alert
         self.calm_since = {}  # worker_id -> when they stopped being at risk
+        self.sos = {}         # worker_id -> open SOS (help request from the helmet button)
 
-    def update(self, results, speed):
+    def update_sos(self, r, now):
+        """Open an SOS alert when a helmet starts signalling, close it when it stops."""
+        wid = r["worker_id"]
+        pressed = r.get("sos_pressed_at")
+        alert = self.sos.get(wid)
+        if pressed and (alert is None or alert["pressed_at"] != pressed):
+            alert = {
+                "alert_id": f"{wid}-sos-{int(now * 1000)}",
+                "worker_id": wid,
+                "site": r["site"],
+                "job": r["job"],
+                "zone": r.get("zone"),
+                "kind": "sos",
+                "pressed_at": pressed,          # simulated time of the button press
+                "started_at": timestamp(),
+                "started_sim": self.sim_time,
+            }
+            self.sos[wid] = alert
+            self._log("sos", alert, f"{wid} held the helmet SOS button: help requested")
+        elif not pressed and alert is not None:
+            self._log("sos_cleared", alert, f"{wid}'s helmet stopped signalling SOS")
+            del self.sos[wid]
+            alert = None
+        if alert is not None:
+            # Latest vitals, for the help-request banner.
+            alert["heart_rate_bpm"] = r["avg_heart_rate_bpm"]
+            alert["skin_temp_c"] = r["avg_skin_temp_c"]
+            alert["motionless_s"] = r.get("motionless_s") or 0
+            alert["current_level"] = r["level"]
+        r["sos_alert"] = alert
+
+    def update(self, results, speed, sim_time=None):
         now = time.time()
+        self.sim_time = sim_time
         for r in results:
             wid = r["worker_id"]
+            self.update_sos(r, now)
             forecast = r.get("forecast")
             if r["level"] == "RED":
                 kind = "red"
@@ -410,8 +570,10 @@ class AlertManager:
                         "worker_id": wid,
                         "site": r["site"],
                         "job": r["job"],
+                        "zone": r.get("zone"),
                         "kind": kind,
                         "started_at": timestamp(),
+                        "started_sim": sim_time,
                     }
                     self.active[wid] = alert
                     self._log("alert", alert, self._message(r, kind))
@@ -425,6 +587,7 @@ class AlertManager:
                 if kind == alert["kind"]:
                     alert["message"] = self._message(r, kind)
                 alert["minutes"] = forecast["minutes"] if forecast and kind == "predicted_red" else None
+                alert["probability"] = forecast["probability"] if forecast else None
             elif alert is not None:
                 since = self.calm_since.setdefault(wid, now)
                 if (now - since) * speed >= CLEAR_AFTER_SIM_SECONDS:
@@ -436,7 +599,8 @@ class AlertManager:
                 # The worker's level right now (an open RED alert may be YELLOW again).
                 self.active[wid]["current_level"] = r["level"]
             r["alert"] = self.active.get(wid)
-        return list(self.active.values())
+        # SOS help requests first: they're the most urgent.
+        return list(self.sos.values()) + list(self.active.values())
 
     @staticmethod
     def _message(r, kind):
@@ -446,10 +610,10 @@ class AlertManager:
         return (f"{r['worker_id']} predicted to reach RED in ~{f['minutes']} min "
                 f"({f['probability']:.0%} likely)")
 
-    @staticmethod
-    def _log(event_type, alert, message):
+    def _log(self, event_type, alert, message):
         entry = {
             "time": timestamp(),
+            "sim_time": getattr(self, "sim_time", None),  # simulated clock, for display
             "type": event_type,
             "alert_id": alert["alert_id"],
             "worker_id": alert["worker_id"],
@@ -520,6 +684,7 @@ def main():
     print("Watching for new readings. Press Ctrl+C to stop.")
     settings = (args.offline, 0)
     alert_manager = AlertManager()
+    site_history = SiteHistory()
     try:
         while True:
             # The dashboard switch (if it has been used) overrides --offline.
@@ -527,7 +692,7 @@ def main():
             offline, version = settings
             weather_cache.set_offline(offline)
             run_once(weather_cache, predictor, speed=args.speed, settings_version=version,
-                     alert_manager=alert_manager)
+                     alert_manager=alert_manager, site_history=site_history)
             time.sleep(loop_seconds)
     except KeyboardInterrupt:
         print("\nStopped by user.")

@@ -1,15 +1,17 @@
-# Heat-Stress Monitoring Prototype
+# Resilia: Heat-Stress Monitoring Prototype
 
-Hackathon prototype for monitoring heat stress in outdoor workers in the UAE.
+Hackathon prototype for monitoring heat stress in outdoor workers in the UAE,
+using (simulated) Resilia smart helmets. Design mock-ups are in `designs/`.
 
 ## What's here
 
 | File | What it does |
 |------|--------------|
-| `simulator.py` | Pretends to be 15 workers wearing wristbands. Every 5 seconds each one sends heart rate, skin temperature and activity level. |
-| `risk_engine.py` | Reads the readings, gets live weather from Open-Meteo, estimates WBGT and rates each worker GREEN / YELLOW / RED. |
+| `simulator.py` | Pretends to be 15 workers wearing Resilia helmets. Every 5 seconds each helmet sends heart rate, forehead skin temperature, activity, solar battery %, gateway, and occasionally an SOS button press. Has its own clock (summer air and sun follow the time of day). |
+| `risk_engine.py` | Reads the readings, gets live weather from Open-Meteo, estimates WBGT, rates each worker GREEN / YELLOW / RED and Steady / Rising / Act now, and raises heat and SOS alerts. |
 | `dashboard_server.py` | Small web server for the dashboard and its data. |
-| `dashboard/index.html` | The dashboard web page (cards, map, weather switch). |
+| `dashboard/index.html` | Control room page (SOS banner, AI alert card, crew table, action log, map). |
+| `dashboard/assets/` | Shared Resilia styles and page engine (header, heat arc, live data, sound, actions). |
 | `run_all.py` | Starts the simulator, risk engine and dashboard together. |
 | `predictor.py` | AI forecast: turns readings into clues and asks the model about the next 15 minutes. |
 | `train_model.py` | Trains the AI forecast on simulated shifts and tests it. |
@@ -53,18 +55,27 @@ Then open **http://localhost:8000**. Press `Ctrl+C` to stop. Logs go to `data/lo
 python run_all.py --demo
 ```
 
-Time runs 15x faster, the dashboard starts on the summer scenario, and the
-results are the same every run: AI warnings appear within ~10 seconds and
-W08, W12 (and W03) turn RED after about 35-40 seconds. Forecasts on the cards
-show both simulated minutes and real seconds. `--speed 5` gives a custom speed.
+Time runs 15x faster, the simulated clock starts at 11:30, the dashboard starts
+on the summer scenario, and the results are the same every run: W02 presses SOS
+at ~20-30 seconds, W08 turns RED at ~33 seconds and W12 at ~40 seconds.
+Forecasts show both simulated minutes and real seconds. `--speed 5` gives a
+custom speed.
 
-The dashboard ("Qaiz", Arabic for the fierce heat of high summer) is a dark
-control-room design: live UAE clock, LIVE indicator, KPI tiles, a dark map with
-pulsing dots for at-risk workers, and a card per worker with heart-rate and
-skin-temperature bars (ticks mark the scoring thresholds). Numbers, bars and
-colours animate smoothly; animations switch off if the computer's
-"reduce motion" setting is on. Status badges always show an icon and word
-(▲ RED, ! YELLOW, ✓ GREEN), so colour is never the only signal.
+The **control room** (Resilia design: navy-dusk header with the sunrise-to-sunset
+heat arc, sand background, sun-gold accents, coral only for at-risk, sage only
+for steady; Space Grotesk headings, Inter body) shows:
+- the **SOS help-request banner** (On my way / Send first-aider / Call 999),
+- the most urgent **AI alert card** (Dispatch water / Schedule shade break /
+  Buzz again / Show location), with chips to switch between other alerts,
+- KPI tiles, live **site conditions** with a WBGT trend, the **crew table**
+  (tap a row for history and per-worker actions), the **action log**, helmet
+  solar battery, and a **crew map**.
+
+Status words: **Act now** = SOS, RED or predicted RED · **Rising** = body signs
+of strain or a rising forecast · **Steady** = everything else (a worker who is
+YELLOW only because the site is hot shows as Steady). Every status shows a word
+and a dot, so colour is never the only signal. "Call 999" only records the
+decision: the supervisor dials 999 themselves.
 It refreshes every 3 seconds. The switch at the top flips between **Live weather**
 (Open-Meteo) and **Summer scenario** (simulated UAE summer afternoon). The map needs
 internet; cards work without it.
@@ -159,7 +170,7 @@ Test results (unseen shifts): 87% accuracy vs 75% for "nothing changes";
 Re-run `python train_model.py` to see current numbers.
 
 **Limitation:** trained on simulated data, so it learns the simulator's rules.
-Real use would need data from real wristbands.
+Real use would need data from real helmets.
 
 ## Example reading
 

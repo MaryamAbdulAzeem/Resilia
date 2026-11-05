@@ -3,1485 +3,657 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Qaiz · Heat-Stress Control Room</title>
-
-<!-- Inter font (falls back to the system font without internet) -->
+<title>Resilia · Control room</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
-
-<!-- Leaflet: free map library. Needs internet; the page still works without it. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
+<link rel="stylesheet" href="/assets/resilia.css">
 <style>
-  /* =========================================================================
-     Theme: dark "control room". Change colours here and they apply everywhere.
-     Status colours are always paired with an icon + word (never colour alone).
-     ========================================================================= */
-  :root {
-    --bg: #060b17;
-    --panel: #0f1a2e;
-    --panel-hi: #14223d;
-    --line: rgba(148, 163, 184, 0.13);
-    --line-2: rgba(148, 163, 184, 0.24);
-    --text: #e7eef9;
-    --text-2: #a7b4c8;
-    --muted: #7081a0;
-    --accent: #4f8cff;
-    --accent-2: #2dd4bf;
+  /* ---------- SOS help-request banner (coral: at-risk) ---------- */
+  .sos {
+    margin-top: 32px; display: grid; grid-template-columns: auto 1fr auto; gap: 18px 28px; align-items: center;
+    background: var(--card); border: 2px solid var(--coral); border-radius: 22px; padding: 22px 28px;
+    box-shadow: 0 0 0 6px rgba(238, 90, 75, 0.08), var(--shadow);
+  }
+  /* Fade in only when the banner first appears (it's redrawn every second). */
+  .sos.appearing { animation: rs-in .35s ease-out; }
+  .sos-badge {
+    width: 84px; height: 84px; border-radius: 50%; display: grid; place-items: center;
+    font-family: var(--font-head); font-weight: 700; font-size: 18px; color: #fff;
+    background: radial-gradient(circle at 40% 35%, #ff8a75, var(--coral) 60%, #d9412f);
+    box-shadow: 0 0 0 0 rgba(238, 90, 75, .5); animation: sos-pulse 1.6s ease-out infinite;
+  }
+  .sos.responding .sos-badge { animation: none; }
+  .sos-kicker { color: var(--coral-text); font-weight: 700; font-size: 14px; letter-spacing: .02em; text-transform: uppercase; }
+  .sos h2 { font-size: clamp(22px, 2.4vw, 30px); font-weight: 600; margin: 2px 0 4px; }
+  .sos p { margin: 0; color: var(--text-2); }
+  .sos-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; }
+  .sos-more { grid-column: 1 / -1; color: var(--coral-text); font-weight: 600; font-size: 14px; }
+  @keyframes sos-pulse { 0% { box-shadow: 0 0 0 0 rgba(238, 90, 75, .45); } 100% { box-shadow: 0 0 0 18px rgba(238, 90, 75, 0); } }
+  @media (max-width: 900px) { .sos { grid-template-columns: auto 1fr; } .sos-actions { grid-column: 1 / -1; justify-content: flex-start; } }
 
-    --green: #22c55e;   --green-text: #4ade80;   --green-rgb: 34, 197, 94;
-    --yellow: #f5b82e;  --yellow-text: #fcd34d;  --yellow-rgb: 245, 184, 46;
-    --red: #ff4d5e;     --red-text: #ff8a96;     --red-rgb: 255, 77, 94;
-    --blue-rgb: 79, 140, 255;
+  /* ---------- KPI tiles ---------- */
+  .kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 18px; margin-bottom: 22px; }
+  @media (max-width: 1100px) { .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (max-width: 640px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .kpi { position: relative; overflow: hidden; padding: 20px 22px 22px; }
+  .kpi.hot::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 5px; background: var(--coral); }
+  .kpi.hot { border-color: rgba(238, 90, 75, .45); }
+  .kpi-label { font-size: 15px; color: var(--text-2); display: flex; align-items: center; gap: 8px; }
+  .kpi-label i { width: 10px; height: 10px; border-radius: 50%; }
+  .kpi-value { font-family: var(--font-head); font-size: 52px; font-weight: 600; line-height: 1.1; margin: 8px 0 4px; letter-spacing: -0.02em; }
+  .kpi-value small { font-size: 22px; color: var(--text-2); font-weight: 500; }
+  .kpi-sub { color: var(--text-2); font-size: 14.5px; line-height: 1.4; }
 
-    --radius: 16px;
-    --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
-    --font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    color-scheme: dark;
-  }
+  /* ---------- Row 2: featured alert + site conditions ---------- */
+  .row2 { display: grid; grid-template-columns: minmax(0, 2.6fr) minmax(300px, 1fr); gap: 22px; margin-bottom: 22px; }
+  .row3 { display: grid; grid-template-columns: minmax(0, 2.6fr) minmax(300px, 1fr); gap: 22px; align-items: start; }
+  @media (max-width: 1050px) { .row2, .row3 { grid-template-columns: 1fr; } }
+  .stack { display: grid; gap: 22px; }
 
-  * { box-sizing: border-box; }
-  [hidden] { display: none !important; }
-  body {
-    margin: 0;
-    min-height: 100vh;
-    color: var(--text);
-    font: 14px/1.5 var(--font);
-    -webkit-font-smoothing: antialiased;
-    background:
-      radial-gradient(1100px 600px at 8% -10%, rgba(var(--blue-rgb), 0.14), transparent 60%),
-      radial-gradient(900px 520px at 105% 0%, rgba(45, 212, 191, 0.07), transparent 60%),
-      var(--bg);
-    background-attachment: fixed;
+  .fa { display: grid; grid-template-columns: auto 1fr; gap: 22px 34px; padding: 30px 34px; border-color: rgba(238, 90, 75, .35); }
+  .fa.clear { border-color: var(--line); }
+  @media (max-width: 700px) { .fa { grid-template-columns: 1fr; padding: 22px; } }
+  .fa-ring {
+    width: 168px; height: 168px; border-radius: 50%; display: grid; place-content: center; text-align: center;
+    background: radial-gradient(circle, #f26a4c 0 52%, #f78b52 53% 100%); color: var(--navy);
+    box-shadow: 0 10px 30px rgba(238, 90, 75, 0.25);
   }
-  .wrap { max-width: 1400px; margin: 0 auto; padding: 0 clamp(16px, 3vw, 32px) 48px; }
-  .num { font-variant-numeric: tabular-nums; }
+  .fa-ring.now { background: radial-gradient(circle, #e9473a 0 52%, #f26a4c 53% 100%); color: #fff; animation: ring-pulse 1.8s ease-in-out infinite; }
+  .fa-ring.clear { background: radial-gradient(circle, #9ccaa5 0 52%, #c9e2cd 53% 100%); box-shadow: none; }
+  .fa-num { font-family: var(--font-head); font-size: 46px; font-weight: 700; line-height: 1; }
+  .fa-unit { font-weight: 600; font-size: 16px; }
+  @keyframes ring-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(238, 90, 75, .35); } 50% { box-shadow: 0 0 0 16px rgba(238, 90, 75, 0); } }
+  @media (max-width: 700px) { .fa-ring { width: 110px; height: 110px; } .fa-num { font-size: 32px; } }
+  .fa-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; color: var(--text-2); font-size: 15px; }
+  .tag { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 10px; font-weight: 600; font-size: 14.5px; }
+  .tag-act { background: var(--coral-soft); color: var(--coral-text); }
+  .tag-steady { background: var(--sage-soft); color: var(--sage-text); }
+  .fa h2 { font-size: clamp(24px, 2.4vw, 34px); font-weight: 600; margin: 12px 0 8px; }
+  .fa p { margin: 0 0 18px; color: var(--text-2); font-size: 17px; line-height: 1.6; max-width: 70ch; }
+  .fa-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-bottom: 20px; }
+  @media (max-width: 560px) { .fa-metrics { grid-template-columns: 1fr; } }
+  .metric { background: var(--sand); border-radius: 14px; padding: 14px 18px; }
+  .metric .k { color: var(--text-2); font-size: 14px; }
+  .metric .v { font-family: var(--font-head); font-size: 28px; font-weight: 600; }
+  .metric .v small { font-family: var(--font-body); font-size: 14px; color: var(--text-2); font-weight: 500; }
+  .fa-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .fa-handled { margin-top: 14px; color: var(--text-2); font-size: 14.5px; }
+  .fa-others { margin-top: 18px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 14px; color: var(--text-2); }
+  .chip { border: 1px solid var(--line-2); background: var(--card); border-radius: 999px; padding: 6px 12px; cursor: pointer; font-weight: 600; font-size: 13.5px; color: var(--navy); }
+  .chip:hover { border-color: var(--navy); }
+  .chip .st-act, .chip .st-rising { font-weight: 700; }
 
-  /* ---- Header ---- */
-  .topbar {
-    position: sticky; top: env(safe-area-inset-top, 0px); z-index: 900;
-    background: rgba(6, 11, 23, 0.78);
-    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
-    border-bottom: 1px solid var(--line);
-  }
-  .topbar-inner {
-    max-width: 1400px; margin: 0 auto; padding: 12px clamp(16px, 3vw, 32px);
-    display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; justify-content: space-between;
-  }
-  .brand { display: flex; align-items: center; gap: 12px; }
-  .brand-logo { filter: drop-shadow(0 0 12px rgba(255, 92, 92, 0.45)); flex: none; }
-  .brand-name { font-size: 20px; font-weight: 800; letter-spacing: 0.06em; line-height: 1.1; }
-  .brand-tag { color: var(--muted); font-size: 12px; font-weight: 500; letter-spacing: 0.02em; }
+  .site-panel { background: var(--navy); color: #fff; border-radius: var(--radius); padding: 26px 28px; display: flex; flex-direction: column; box-shadow: var(--shadow); }
+  .sp-title { color: rgba(255, 255, 255, .85); font-size: 15px; }
+  .sp-big { display: flex; align-items: flex-end; gap: 14px; margin: 6px 0 14px; }
+  .sp-wbgt { font-family: var(--font-head); font-size: 62px; font-weight: 600; line-height: 1; letter-spacing: -0.02em; }
+  .sp-wbgt-note { color: rgba(255, 255, 255, .85); font-size: 15px; line-height: 1.35; padding-bottom: 6px; }
+  /* The chart grows to fill the panel's spare height (the panel matches the alert card). */
+  .sp-chart { width: 100%; flex: 1 1 110px; min-height: 110px; display: block; margin-top: 8px; }
+  .sp-axis { display: flex; justify-content: space-between; font-size: 13px; color: rgba(255, 255, 255, .7); margin: 8px 0 16px; }
+  .sp-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; font-size: 14px; color: rgba(255, 255, 255, .75); }
+  .sp-stats b { display: block; color: #fff; font-size: 16px; }
+  .sp-src { margin-top: 12px; font-size: 12px; color: rgba(255, 255, 255, .55); }
 
-  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  /* ---------- Crew table ---------- */
+  .crew-table { width: 100%; border-collapse: collapse; font-size: 15.5px; }
+  .crew-wrap { overflow-x: auto; }
+  .crew-table th { text-align: left; font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-2); font-weight: 600; padding: 12px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  .crew-table td { padding: 14px 12px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  .crew-table tr.row { cursor: pointer; transition: background-color .15s; }
+  .crew-table tr.row:hover { background: rgba(244, 239, 230, .6); }
+  .crew-table tr.row[aria-expanded="true"] { background: var(--sand); }
+  .w-id { font-weight: 700; font-family: var(--font-head); font-size: 17px; }
+  .w-job { color: var(--text-2); font-size: 13.5px; text-transform: capitalize; }
+  .helmet { white-space: nowrap; color: var(--text-2); }
+  .helmet.low { color: var(--coral-text); font-weight: 600; }
+  tr.detail td { background: var(--sand); padding: 6px 12px 18px; }
+  .detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 18px; }
+  .detail-grid h4 { margin: 8px 0 6px; font-size: 13px; letter-spacing: .1em; text-transform: uppercase; color: var(--text-2); font-weight: 600; }
+  .spark { width: 100%; height: 44px; display: block; }
+  .detail-list { margin: 0; padding-left: 16px; color: var(--text-2); font-size: 14px; }
+  .detail-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 
-  .switch {
-    display: inline-flex; padding: 3px; border-radius: 12px;
-    background: rgba(255, 255, 255, 0.04); border: 1px solid var(--line);
-  }
-  .switch button {
-    font: inherit; font-size: 13px; font-weight: 600; border: 0; background: transparent;
-    color: var(--text-2); padding: 7px 14px; border-radius: 9px; cursor: pointer;
-    transition: background-color .25s, color .25s, box-shadow .25s;
-  }
-  .switch button:hover { color: var(--text); }
-  .switch button[aria-pressed="true"] {
-    background: linear-gradient(180deg, #5b95ff, #3f74e6); color: #fff;
-    box-shadow: 0 0 18px rgba(var(--blue-rgb), 0.45);
-  }
-
-  .pill {
-    display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px;
-    border-radius: 999px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.04);
-    font-size: 12px; font-weight: 700; letter-spacing: 0.08em; color: var(--text-2); white-space: nowrap;
-  }
-  .live-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); position: relative; }
-  .live.is-live { color: var(--green-text); border-color: rgba(var(--green-rgb), 0.35); }
-  .live.is-live .live-dot { background: var(--green); box-shadow: 0 0 10px var(--green); }
-  .live.is-live .live-dot::after {
-    content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--green);
-    animation: ping 1.8s cubic-bezier(0, 0, .2, 1) infinite;
-  }
-  .live.is-warn { color: var(--yellow-text); border-color: rgba(var(--yellow-rgb), 0.35); }
-  .live.is-warn .live-dot { background: var(--yellow); }
-  .live.is-down { color: var(--red-text); border-color: rgba(var(--red-rgb), 0.35); }
-  .live.is-down .live-dot { background: var(--red); }
-
-  .clock { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.15; }
-  .clock-time { font-size: 18px; font-weight: 700; letter-spacing: 0.02em; font-variant-numeric: tabular-nums; }
-  .clock-date { font-size: 11px; color: var(--muted); font-weight: 500; }
-
-  .btn-pill {
-    font: inherit; font-size: 12.5px; font-weight: 600; height: 34px; padding: 0 12px; border-radius: 999px;
-    cursor: pointer; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.04); color: var(--text);
-    transition: border-color .2s, background-color .2s;
-  }
-  .btn-pill:hover { border-color: var(--line-2); background: rgba(255, 255, 255, 0.07); }
-  .btn-pill.locked { color: var(--red-text); border-color: rgba(var(--red-rgb), 0.5); animation: softPulse 2s ease-in-out infinite; }
-  .demo-badge { color: #9cc0ff; border-color: rgba(var(--blue-rgb), 0.45); background: rgba(var(--blue-rgb), 0.1); }
-  .view-badge { color: var(--yellow-text); border-color: rgba(var(--yellow-rgb), 0.45); background: rgba(var(--yellow-rgb), 0.1); }
-  .share-pill {
-    font: inherit; font-size: 12px; font-weight: 600; letter-spacing: 0; cursor: pointer; max-width: 300px;
-    color: var(--green-text); border-color: rgba(var(--green-rgb), 0.4); background: rgba(var(--green-rgb), 0.08);
-  }
-  .share-pill span { overflow: hidden; text-overflow: ellipsis; }
-  /* View-only visitors see the weather mode but can't change it */
-  body.view-only .switch button { cursor: default; pointer-events: none; }
-  body.view-only .switch button[aria-pressed="false"] { opacity: .55; }
-  .view-note { margin-top: 10px; font-size: 12px; color: var(--muted); font-style: italic; }
-
-  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-
-  .statusbar {
-    display: flex; align-items: center; gap: 8px; margin: 14px 0 18px; font-size: 13px; color: var(--muted);
-  }
-  .statusbar.warn { color: var(--red-text); font-weight: 600; }
-  .statusbar::before { content: "●"; font-size: 9px; color: currentColor; opacity: .8; }
-
-  /* ---- KPI tiles ---- */
-  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; margin-bottom: 18px; }
-  .kpi {
-    --rgb: var(--blue-rgb);
-    position: relative; overflow: hidden; border-radius: var(--radius); padding: 18px 20px;
-    border: 1px solid rgba(var(--rgb), 0.28);
-    background:
-      radial-gradient(420px 160px at 0% 0%, rgba(var(--rgb), 0.22), transparent 70%),
-      linear-gradient(180deg, var(--panel-hi), var(--panel));
-    box-shadow: var(--shadow);
-    display: grid; grid-template-columns: auto 1fr; gap: 4px 16px; align-items: center;
-  }
-  .kpi-RED { --rgb: var(--red-rgb); }
-  .kpi-YELLOW { --rgb: var(--yellow-rgb); }
-  .kpi-GREEN { --rgb: var(--green-rgb); }
-  .kpi-icon {
-    grid-row: span 2; width: 52px; height: 52px; border-radius: 14px; display: grid; place-items: center;
-    font-size: 24px; font-weight: 800; color: rgb(var(--rgb));
-    background: rgba(var(--rgb), 0.14); border: 1px solid rgba(var(--rgb), 0.35);
-    box-shadow: 0 0 24px rgba(var(--rgb), 0.25), inset 0 0 12px rgba(var(--rgb), 0.12);
-  }
-  .kpi-value { font-size: 40px; font-weight: 800; line-height: 1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
-  .kpi-value small { font-size: 15px; color: var(--muted); font-weight: 600; letter-spacing: 0; margin-left: 4px; }
-  .kpi-label { color: var(--text-2); font-size: 13px; font-weight: 600; }
-  .kpi.hot { animation: kpiGlow 2.2s ease-in-out infinite; }
-
-  /* ---- Panels ---- */
-  .panel {
-    background: linear-gradient(180deg, rgba(20, 34, 61, 0.92), rgba(13, 22, 40, 0.92));
-    border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px 18px;
-  }
-  .panel-title {
-    margin: 0 0 12px; font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
-    color: var(--text-2); display: flex; align-items: center; gap: 8px;
-  }
-  .panel-title .count { color: var(--muted); font-weight: 600; letter-spacing: 0.04em; }
-  .note { color: var(--muted); font-size: 12px; margin: 10px 0 0; }
-
-  .top { display: grid; grid-template-columns: minmax(0, 2.1fr) minmax(0, 1fr); gap: 16px; margin-bottom: 18px; }
-  @media (max-width: 960px) { .top { grid-template-columns: 1fr; } }
-
-  /* ---- Map ---- */
-  #map { height: 440px; border-radius: 12px; background: #0a1324; border: 1px solid var(--line); }
+  /* ---------- Map ---------- */
+  #map { height: 380px; border-radius: 14px; border: 1px solid var(--line); background: #efe8dc; }
+  .leaflet-container { font-family: var(--font-body); }
+  .leaflet-tile-pane { filter: grayscale(55%) sepia(18%) brightness(1.04) contrast(.92); }
   .map-fallback { padding: 60px 16px; color: var(--muted); text-align: center; }
-  .leaflet-container { font-family: var(--font); background: #0a1324; }
-  /* Dark map: invert the normal light map, rotate colours back, then mute and tint it navy.
-     Only the map tiles are filtered; dots, lines and labels keep their real colours. */
-  .leaflet-tile-pane { filter: invert(100%) hue-rotate(185deg) brightness(88%) contrast(92%) saturate(45%); }
-  .leaflet-control-attribution { background: rgba(6, 11, 23, 0.7) !important; color: var(--muted) !important; }
-  .leaflet-control-attribution a { color: var(--text-2) !important; }
-  .leaflet-bar a { background: var(--panel-hi) !important; color: var(--text) !important; border-color: var(--line) !important; }
-
-  .leaflet-tooltip.site-label, .leaflet-tooltip.wtip {
-    background: rgba(10, 19, 36, 0.94); color: var(--text); border: 1px solid var(--line-2);
-    border-radius: 8px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45); font-size: 12px; line-height: 1.4;
-  }
-  .leaflet-tooltip.site-label { padding: 4px 9px; }
-  .leaflet-tooltip.wtip { padding: 8px 10px; }
-  .leaflet-tooltip-left.site-label::before { border-left-color: var(--line-2); }
-  .leaflet-tooltip-right.site-label::before { border-right-color: var(--line-2); }
-  .leaflet-tooltip-top.wtip::before { border-top-color: var(--line-2); }
-  .site-label-name { font-weight: 700; font-size: 13px; }
-  .site-label-wbgt { color: var(--text-2); }
-
-  /* Worker dots: glowing, with a pulsing ring when at risk */
+  .leaflet-tooltip.site-label, .leaflet-tooltip.wtip { background: var(--card); color: var(--text); border: 1px solid var(--line-2); border-radius: 10px; box-shadow: var(--shadow); font-size: 12.5px; }
+  .site-label-name { font-family: var(--font-head); font-weight: 600; font-size: 13.5px; }
   .wmarker { background: none; border: 0; }
-  .wdot {
-    display: block; width: 16px; height: 16px; border-radius: 50%; position: relative; cursor: pointer;
-    background: var(--c); border: 2px solid #0a1324; box-shadow: 0 0 10px var(--c);
-    transition: background-color .6s, box-shadow .6s;
-  }
-  .wdot.lvl-GREEN { --c: var(--green); }
-  .wdot.lvl-YELLOW { --c: var(--yellow); }
-  .wdot.lvl-RED { --c: var(--red); }
-  .wdot.risk::after {
-    content: ""; position: absolute; inset: -3px; border-radius: 50%; border: 2px solid var(--red);
-    animation: ping 1.6s cubic-bezier(0, 0, .2, 1) infinite;
-  }
+  .wdot { display: block; width: 16px; height: 16px; border-radius: 50%; position: relative; cursor: pointer; background: var(--c); border: 2px solid #fff; box-shadow: 0 1px 4px rgba(16, 40, 58, .35); transition: background-color .5s; }
+  .wdot.st-steady { --c: var(--sage); } .wdot.st-rising { --c: var(--sun); } .wdot.st-act { --c: var(--coral); }
+  .wdot.st-act::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid var(--coral); animation: rs-ping 1.6s cubic-bezier(0, 0, .2, 1) infinite; }
+  .wdot.focus { outline: 3px solid var(--navy); outline-offset: 2px; }
 
-  /* ---- Site conditions ---- */
-  .site { padding: 12px 0; border-top: 1px solid var(--line); }
-  .site:first-child { border-top: 0; padding-top: 2px; }
-  .site-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-  .site-name { font-weight: 700; font-size: 14px; }
-  .site-wbgt { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; }
-  .site-wbgt small { font-size: 11px; color: var(--muted); font-weight: 600; margin-left: 2px; }
-  .site-detail { color: var(--text-2); font-size: 12.5px; margin-top: 2px; }
-  .site-cat { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
-  .site-cat.c-GREEN { color: var(--green-text); }
-  .site-cat.c-YELLOW { color: var(--yellow-text); }
-  .site-cat.c-RED { color: var(--red-text); }
-  .sim-tag { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; color: var(--yellow-text);
-             border: 1px solid rgba(var(--yellow-rgb), .4); border-radius: 999px; padding: 0 6px; margin-left: 6px; }
-
-  /* ---- Progress bars (heart rate, skin temp, WBGT) ---- */
-  .track { position: relative; height: 6px; border-radius: 999px; background: rgba(148, 163, 184, 0.14); margin-top: 6px; overflow: visible; }
-  .fill {
-    position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: 999px;
-    background: var(--zc, var(--green)); box-shadow: 0 0 10px var(--zc, var(--green));
-    transition: width .8s cubic-bezier(.2, .8, .2, 1), background-color .6s, box-shadow .6s;
-  }
-  .z-GREEN { --zc: var(--green); }
-  .z-YELLOW { --zc: var(--yellow); }
-  .z-RED { --zc: var(--red); }
-  .tick { position: absolute; top: -3px; bottom: -3px; width: 2px; border-radius: 2px; background: rgba(231, 238, 249, 0.35); }
-
-  /* ---- Worker cards ---- */
-  .section-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; margin: 6px 0 12px; }
-  .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; color: var(--muted); font-size: 12px; }
-  .legend span { display: inline-flex; align-items: center; gap: 6px; }
-  .legend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
-
-  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 14px; }
-  .card {
-    --rgb: var(--green-rgb);
-    position: relative; border-radius: var(--radius); padding: 16px 16px 14px; overflow: hidden;
-    background: linear-gradient(180deg, #13203a, #0e182c);
-    border: 1px solid var(--line); box-shadow: var(--shadow);
-    transition: border-color .6s, box-shadow .6s;
-  }
-  /* Fade-in only for brand-new cards (class removed after), so it never replays. */
-  .card.entering { animation: cardIn .45s ease-out both; }
-  .card::before {
-    content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px;
-    background: linear-gradient(90deg, rgba(var(--rgb), 0.95), rgba(var(--rgb), 0.15));
-    transition: background .6s;
-  }
-  .card.lvl-YELLOW { --rgb: var(--yellow-rgb); }
-  .card.lvl-RED { --rgb: var(--red-rgb); border-color: rgba(var(--red-rgb), 0.45); }
-  /* RED workers: strong, fast red pulse. Predicted RED: softer, slower red pulse,
-     so actual emergencies stand out even when many workers are trending up. */
-  .card.at-risk { animation: riskPulseSoft 3s ease-in-out infinite; }
-  .card.at-risk.lvl-RED { animation: riskPulse 1.8s ease-in-out infinite; }
-  .card.flash { box-shadow: 0 0 0 3px var(--accent), var(--shadow); }
-
-  .card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
-  .card-id { font-size: 20px; font-weight: 800; letter-spacing: 0.01em; }
-  .card-meta { color: var(--text-2); font-size: 12.5px; text-transform: capitalize; }
-
-  .badge {
-    --rgb: var(--green-rgb);
-    display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px;
-    font-size: 12px; font-weight: 800; letter-spacing: 0.06em; white-space: nowrap;
-    color: rgb(var(--rgb)); background: rgba(var(--rgb), 0.13); border: 1px solid rgba(var(--rgb), 0.45);
-    box-shadow: 0 0 14px rgba(var(--rgb), 0.25);
-    transition: color .5s, background-color .5s, border-color .5s, box-shadow .5s;
-  }
-  .badge.b-GREEN { --rgb: var(--green-rgb); color: var(--green-text); }
-  .badge.b-YELLOW { --rgb: var(--yellow-rgb); color: var(--yellow-text); }
-  .badge.b-RED { --rgb: var(--red-rgb); color: var(--red-text); }
-
-  .meters { display: grid; gap: 10px; margin: 14px 0 12px; }
-  .meter-row { display: flex; justify-content: space-between; align-items: baseline; font-size: 12.5px; }
-  .meter-k { color: var(--muted); font-weight: 600; }
-  .meter-v { color: var(--text-2); }
-  .meter-v b { color: var(--text); font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
-
-  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
-  .chip {
-    font-size: 11.5px; font-weight: 600; color: var(--text-2); padding: 3px 9px; border-radius: 999px;
-    background: rgba(255, 255, 255, 0.05); border: 1px solid var(--line); text-transform: capitalize;
-  }
-
-  .forecast {
-    margin-top: 12px; padding: 8px 10px; border-radius: 10px; font-size: 13px; font-weight: 600;
-    display: flex; gap: 8px; align-items: baseline;
-    background: rgba(var(--fc-rgb), 0.1); border: 1px dashed rgba(var(--fc-rgb), 0.55);
-    animation: fadeIn .4s ease-out;
-  }
-  .fc-RED { --fc-rgb: var(--red-rgb); }
-  .fc-YELLOW { --fc-rgb: var(--yellow-rgb); }
-  .forecast .fc-icon { color: rgb(var(--fc-rgb)); font-weight: 800; }
-  .forecast .fc-prob { margin-left: auto; color: var(--muted); font-weight: 500; font-size: 12px; white-space: nowrap; }
-  .ai-tag { font-size: 10px; font-weight: 800; letter-spacing: .08em; color: #9cc0ff; border: 1px solid rgba(var(--blue-rgb), .45);
-            border-radius: 5px; padding: 0 5px; margin-right: 2px; }
-
-  .reasons { margin: 10px 0 0; padding: 0; list-style: none; color: var(--text-2); font-size: 12px; }
-  .reasons li { padding-left: 12px; position: relative; }
-  .reasons li::before { content: ""; position: absolute; left: 2px; top: .62em; width: 4px; height: 4px; border-radius: 50%; background: var(--muted); }
-
-  .card-alert { margin-top: 10px; font-size: 12.5px; font-weight: 700; color: var(--red-text); }
-  .card-alert.handled { color: var(--text-2); font-weight: 500; }
-
-  .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
-  .act {
-    font: inherit; font-size: 12.5px; font-weight: 600; padding: 7px 11px; border-radius: 10px; cursor: pointer;
-    color: var(--text); background: rgba(255, 255, 255, 0.05); border: 1px solid var(--line-2);
-    transition: background-color .2s, border-color .2s, transform .1s, box-shadow .2s;
-  }
-  .act:hover { background: rgba(255, 255, 255, 0.09); border-color: rgba(var(--blue-rgb), 0.6); }
-  .act:active { transform: translateY(1px); }
-  .act:disabled { opacity: .5; cursor: wait; }
-  .act.primary {
-    color: #fff; border-color: transparent;
-    background: linear-gradient(180deg, #5b95ff, #3f74e6); box-shadow: 0 0 16px rgba(var(--blue-rgb), 0.35);
-  }
-  .last-action { color: var(--muted); font-size: 12px; margin-top: 8px; }
-  .empty { color: var(--muted); padding: 24px; text-align: center; }
-
-  /* ---- Supervisor pop-ups ---- */
-  .alert-stack {
-    /* Bottom-right, so pop-ups never cover the header's switch and sound button */
-    position: fixed; z-index: 1000; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px));
-    width: min(380px, calc(100vw - 32px)); max-height: 70vh; overflow-y: auto;
-    display: flex; flex-direction: column; gap: 10px;
-  }
-  .stack-head {
-    display: flex; align-items: center; justify-content: space-between; gap: 10px;
-    padding: 8px 10px 8px 14px; border-radius: 12px; font-size: 13px; font-weight: 700;
-    background: rgba(10, 19, 36, 0.96); border: 1px solid rgba(var(--red-rgb), 0.5); color: var(--red-text);
-    box-shadow: 0 0 22px rgba(var(--red-rgb), 0.25), 0 10px 30px rgba(0, 0, 0, 0.5);
-  }
-  .stack-btn {
-    font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; padding: 5px 10px; border-radius: 8px;
-    color: var(--text); background: rgba(255, 255, 255, 0.06); border: 1px solid var(--line-2);
-  }
-  .stack-btn:hover { border-color: rgba(var(--blue-rgb), 0.6); }
-  .stack-more { width: 100%; text-align: center; padding: 9px; }
-  .popup-now { font-size: 12px; font-weight: 600; color: var(--text-2); margin-left: auto; white-space: nowrap; }
-  .popup {
-    --rgb: var(--red-rgb);
-    border-radius: 14px; padding: 14px 16px; color: var(--text);
-    background: linear-gradient(180deg, rgba(24, 36, 64, 0.97), rgba(14, 23, 42, 0.97));
-    border: 1px solid rgba(var(--rgb), 0.55);
-    box-shadow: 0 0 0 1px rgba(var(--rgb), 0.15), 0 0 32px rgba(var(--rgb), 0.3), 0 18px 40px rgba(0, 0, 0, 0.55);
-    animation: popIn .35s cubic-bezier(.2, .8, .2, 1);
-  }
-  .popup.kind-predicted_red { --rgb: var(--yellow-rgb); }
-  .popup-title { font-weight: 800; font-size: 15px; display: flex; gap: 8px; align-items: baseline; }
-  .popup-title .icon { color: rgb(var(--rgb)); }
-  .popup-meta { color: var(--text-2); font-size: 12.5px; margin: 2px 0 8px; text-transform: capitalize; }
-  .popup-msg { font-size: 13px; color: var(--text-2); }
-  .popup .link { font: inherit; font-size: 12px; background: none; border: 0; color: #9cc0ff;
-                 cursor: pointer; padding: 0; margin-top: 8px; text-decoration: underline; }
-  .sound-hint { border-radius: 12px; padding: 10px 12px; font-size: 12.5px; color: var(--text-2);
-                background: rgba(10, 19, 36, 0.95); border: 1px dashed var(--line-2); }
-
-  .toast {
-    position: fixed; z-index: 1001; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px));
-    transform: translateX(-50%); padding: 10px 16px; border-radius: 10px; font-size: 13px; font-weight: 600;
-    background: rgba(20, 34, 61, 0.97); color: var(--text); border: 1px solid rgba(var(--blue-rgb), 0.5);
-    box-shadow: 0 0 24px rgba(var(--blue-rgb), 0.3), 0 10px 30px rgba(0, 0, 0, 0.5);
-    animation: fadeIn .25s ease-out;
-  }
-  @media (min-width: 700px) { .toast { left: 24px; transform: none; } }
-
-  /* ---- Action log ---- */
-  .log-panel { margin-top: 18px; }
-  .log-head { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; justify-content: space-between; }
-  .log-filter { color: var(--text-2); font-size: 13px; display: inline-flex; gap: 8px; align-items: center; cursor: pointer; }
-  .log-filter input { accent-color: var(--accent); }
-  .log-wrap { overflow-x: auto; }
-  .log { width: 100%; border-collapse: collapse; font-size: 13px; }
-  .log th { text-align: left; color: var(--muted); font-weight: 700; font-size: 11px; letter-spacing: .1em;
-            text-transform: uppercase; border-bottom: 1px solid var(--line-2); padding: 8px 10px; white-space: nowrap; }
-  .log td { border-bottom: 1px solid var(--line); padding: 9px 10px; vertical-align: top; color: var(--text-2); }
-  .log tbody tr { transition: background-color .2s; }
-  .log tbody tr:hover { background: rgba(255, 255, 255, 0.03); }
-  .log td.t { white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--muted); }
-  .log td.w { color: var(--text); font-weight: 700; }
-  .log .ev { font-weight: 700; white-space: nowrap; }
-  .log .ev-alert { color: var(--red-text); }
-  .log .ev-predicted { color: var(--yellow-text); }
-  .log .ev-action { color: #9cc0ff; }
-  .log .ev-cleared { color: var(--green-text); }
-  .log .resp { color: var(--muted); }
-
-  footer { color: var(--muted); font-size: 12px; text-align: center; margin-top: 28px; }
-
-  /* ---- Animations ---- */
-  @keyframes ping { 0% { transform: scale(1); opacity: .85; } 100% { transform: scale(2.6); opacity: 0; } }
-  @keyframes softPulse { 0%, 100% { box-shadow: 0 0 0 rgba(var(--red-rgb), 0); } 50% { box-shadow: 0 0 14px rgba(var(--red-rgb), .45); } }
-  @keyframes riskPulse {
-    0%, 100% { box-shadow: 0 0 0 1px rgba(var(--red-rgb), .45), 0 0 16px rgba(var(--red-rgb), .22), var(--shadow); }
-    50%      { box-shadow: 0 0 0 1px rgba(var(--red-rgb), .9),  0 0 34px rgba(var(--red-rgb), .55), var(--shadow); }
-  }
-  @keyframes riskPulseSoft {
-    0%, 100% { box-shadow: 0 0 0 1px rgba(var(--red-rgb), .2), 0 0 8px rgba(var(--red-rgb), .08), var(--shadow); }
-    50%      { box-shadow: 0 0 0 1px rgba(var(--red-rgb), .45), 0 0 18px rgba(var(--red-rgb), .22), var(--shadow); }
-  }
-  @keyframes kpiGlow {
-    0%, 100% { box-shadow: 0 0 0 rgba(var(--rgb), 0), var(--shadow); }
-    50%      { box-shadow: 0 0 28px rgba(var(--rgb), .35), var(--shadow); }
-  }
-  @keyframes cardIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-  @keyframes popIn { from { opacity: 0; transform: translateY(12px) scale(.98); } to { opacity: 1; transform: none; } }
-  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-  @keyframes badgePop { 0% { transform: scale(1); } 40% { transform: scale(1.15); } 100% { transform: scale(1); } }
-  .badge.pop { animation: badgePop .45s ease-out; }
-
-  /* People who ask their system for less motion get a calm, static screen. */
-  @media (prefers-reduced-motion: reduce) {
-    *, *::before, *::after { animation: none !important; transition: none !important; }
-  }
+  /* ---------- Action log + solar ---------- */
+  .log-list { list-style: none; margin: 0; padding: 0; }
+  .log-list li { display: grid; grid-template-columns: 52px 14px 1fr; gap: 10px; padding: 9px 0; font-size: 15px; line-height: 1.45; }
+  .log-list .t { color: var(--text-2); font-size: 14px; font-variant-numeric: tabular-nums; }
+  .log-list .d { width: 9px; height: 9px; border-radius: 50%; margin-top: 7px; background: var(--navy); }
+  .d-act { background: var(--coral) !important; } .d-rising { background: var(--sun) !important; } .d-steady { background: var(--sage) !important; }
+  .log-list .resp { color: var(--muted); }
+  .log-tools { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 10px; font-size: 14px; color: var(--text-2); }
+  .link-btn { background: none; border: 0; padding: 0; color: var(--navy); font-weight: 600; cursor: pointer; text-decoration: underline; }
+  .solar { background: var(--sun-soft); border: 1px solid #f1dcb5; border-radius: var(--radius); padding: 22px 26px; display: grid; grid-template-columns: auto 1fr; gap: 16px; align-items: center; }
+  .solar h3 { margin: 0 0 4px; font-size: 21px; font-weight: 600; }
+  .solar p { margin: 0; color: var(--text-2); font-size: 14.5px; }
 </style>
 </head>
 <body>
+<header id="rs-header"></header>
 
-<header class="topbar">
-  <div class="topbar-inner">
-    <div class="brand">
-      <!-- Logo: thermometer in a heat-gradient tile -->
-      <svg class="brand-logo" width="38" height="38" viewBox="0 0 32 32" aria-hidden="true">
-        <defs>
-          <linearGradient id="logo-grad" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stop-color="#ff9a3d"/><stop offset="1" stop-color="#ff3d6e"/>
-          </linearGradient>
-        </defs>
-        <rect x="1" y="1" width="30" height="30" rx="9" fill="url(#logo-grad)"/>
-        <path d="M16 6.5a2.9 2.9 0 0 0-2.9 2.9v8.3a4.9 4.9 0 1 0 5.8 0V9.4A2.9 2.9 0 0 0 16 6.5z"
-              fill="none" stroke="#fff" stroke-width="1.9"/>
-        <circle cx="16" cy="21.6" r="2.3" fill="#fff"/>
-        <path d="M16 12.2v7.4" stroke="#fff" stroke-width="1.9" stroke-linecap="round"/>
-        <path d="M22.5 9.5c1.2.9 1.2 2.1 0 3M25 8c2 1.6 2 4.4 0 6" fill="none" stroke="#fff" stroke-width="1.4" stroke-linecap="round" opacity=".85"/>
-      </svg>
-      <div>
-        <div class="brand-name">QAIZ</div>
-        <div class="brand-tag">Heat-stress control room · UAE</div>
-      </div>
-    </div>
+<main class="wrap">
+  <section id="sos" class="sos" hidden aria-live="assertive"></section>
 
-    <div class="switch" role="group" aria-label="Weather source">
-      <button type="button" data-mode="live" aria-pressed="false">📡 Live weather</button>
-      <button type="button" data-mode="offline" aria-pressed="false">☀️ Summer scenario</button>
-    </div>
-
-    <div class="controls">
-      <span id="live-pill" class="pill live" role="status"><span class="live-dot"></span><span id="live-text">CONNECTING</span></span>
-      <span id="demo-badge" class="pill demo-badge" hidden></span>
-      <span id="view-badge" class="pill view-badge" hidden title="You're on the public link: you can watch, but actions are taken in the control room">👁 VIEW ONLY</span>
-      <button type="button" id="share-pill" class="pill share-pill" hidden title="Public view-only link for teammates. Click to copy."></button>
-      <button type="button" id="sound-btn" class="btn-pill">🔔 Sound</button>
-      <div class="clock" aria-label="Current time in the UAE">
-        <span id="clock-time" class="clock-time">--:--:--</span>
-        <span id="clock-date" class="clock-date">&nbsp;</span>
-      </div>
+  <p class="eyebrow" id="eyebrow">&nbsp;</p>
+  <div class="title-row">
+    <h1 class="page-title" id="headline">Connecting to the helmets…</h1>
+    <div class="rs-switch" role="group" aria-label="Weather source">
+      <button type="button" data-mode="live" aria-pressed="false">Live weather</button>
+      <button type="button" data-mode="offline" aria-pressed="false">Summer scenario</button>
     </div>
   </div>
-</header>
 
-<div class="wrap">
+  <section class="kpis" aria-label="Crew summary">
+    <div class="card kpi"><div class="kpi-label">On shift</div><div class="kpi-value num" id="k-shift">–</div><div class="kpi-sub">workers wearing Resilia helmets</div></div>
+    <div class="card kpi"><div class="kpi-label"><i style="background:var(--sage)"></i>Steady</div><div class="kpi-value num" id="k-steady">–</div><div class="kpi-sub">no action needed</div></div>
+    <div class="card kpi"><div class="kpi-label"><i style="background:var(--sun)"></i>Rising</div><div class="kpi-value num" id="k-rising">–</div><div class="kpi-sub">AI forecast: watch closely</div></div>
+    <div class="card kpi" id="k-act-card"><div class="kpi-label"><i style="background:var(--coral)"></i>Act now</div><div class="kpi-value num" id="k-act">–</div><div class="kpi-sub" id="k-act-sub">&nbsp;</div></div>
+    <div class="card kpi"><div class="kpi-label" id="k-gw-label">Site gateways</div><div class="kpi-value"><span class="num" id="k-conn">–</span><small id="k-total"></small></div><div class="kpi-sub" id="k-gw-sub">&nbsp;</div></div>
+  </section>
 
-  <div id="status" class="statusbar" role="status">Connecting…</div>
+  <section class="row2">
+    <article class="card fa" id="featured" aria-live="polite"></article>
+    <aside class="site-panel" id="site-panel" aria-label="Site conditions"></aside>
+  </section>
 
-  <section class="kpis" aria-label="Summary">
-    <div class="kpi kpi-RED" id="kpi-RED">
-      <div class="kpi-icon">▲</div>
-      <div class="kpi-value"><span id="count-RED" class="num">–</span><small>/ <span class="total">15</span></small></div>
-      <div class="kpi-label">RED · danger</div>
+  <section class="row3">
+    <div class="stack">
+      <article class="card">
+        <div class="card-head"><h2>Crew</h2><span class="hint" id="crew-hint">Sorted by risk · tap a row for history</span></div>
+        <div class="crew-wrap">
+          <table class="crew-table">
+            <thead><tr><th>Worker</th><th>Status</th><th>Heart rate</th><th>Skin</th><th>Forecast</th><th>Helmet</th></tr></thead>
+            <tbody id="crew-body"><tr><td colspan="6" class="empty">Waiting for the helmets…</td></tr></tbody>
+          </table>
+        </div>
+      </article>
+      <article class="card" id="map-card">
+        <div class="card-head"><h2>Crew map</h2><span class="hint">Dots are coloured by status · pulsing rings mean act now</span></div>
+        <div id="map"></div>
+      </article>
     </div>
-    <div class="kpi kpi-YELLOW">
-      <div class="kpi-icon">!</div>
-      <div class="kpi-value"><span id="count-YELLOW" class="num">–</span><small>/ <span class="total">15</span></small></div>
-      <div class="kpi-label">YELLOW · caution</div>
-    </div>
-    <div class="kpi kpi-GREEN">
-      <div class="kpi-icon">✓</div>
-      <div class="kpi-value"><span id="count-GREEN" class="num">–</span><small>/ <span class="total">15</span></small></div>
-      <div class="kpi-label">GREEN · OK</div>
-    </div>
-    <div class="kpi kpi-AI" title="Workers the AI forecast expects to reach a higher level within 15 minutes">
-      <div class="kpi-icon">↗</div>
-      <div class="kpi-value"><span id="count-rising" class="num">–</span></div>
-      <div class="kpi-label">Rising · AI forecast (15 min)</div>
+    <div class="stack">
+      <article class="card">
+        <div class="card-head"><h2>Action log</h2></div>
+        <ul class="log-list" id="log"><li class="empty" style="display:block">No alerts or actions yet.</li></ul>
+        <div class="log-tools">
+          <label><input type="checkbox" id="log-actions-only"> Supervisor actions only</label>
+          <button type="button" class="link-btn" id="log-more">Show more</button>
+        </div>
+      </article>
+      <article class="solar" id="solar">
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#10283a" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        <div><h3>Helmets charging from the sun</h3><p id="solar-text">&nbsp;</p></div>
+      </article>
     </div>
   </section>
 
-  <section class="top">
-    <div class="panel">
-      <h2 class="panel-title">Worker locations</h2>
-      <div id="map"></div>
-      <p class="note">Each dot is one worker, in a ring around their site. Pulsing rings mark workers who are RED or predicted RED. Dubai and Sharjah are close together, so their groups are pulled apart slightly; the dashed line points to the real location.</p>
-    </div>
-    <div class="panel">
-      <h2 class="panel-title">Site conditions</h2>
-      <div id="sites"><p class="empty">Waiting for data…</p></div>
-      <p class="note">WBGT (heat stress) is estimated from air temperature, humidity and sunlight. Low &lt; 28 °C · Moderate 28–31 · High ≥ 31.</p>
-    </div>
-  </section>
+  <footer class="rs-foot">Resilia hackathon prototype · simulated helmets · WBGT estimated from weather data · not a certified safety device</footer>
+</main>
 
-  <section aria-labelledby="workers-title">
-    <div class="section-head">
-      <h2 class="panel-title" id="workers-title" style="margin:0">Workforce <span class="count" id="workers-count"></span></h2>
-      <div class="legend">
-        <span><i style="background:var(--red)"></i>▲ RED</span>
-        <span><i style="background:var(--yellow)"></i>! YELLOW</span>
-        <span><i style="background:var(--green)"></i>✓ GREEN</span>
-        <span>Sorted by risk · bars show thresholds as ticks</span>
-      </div>
-    </div>
-    <div class="cards" id="cards"><p class="empty">Waiting for data…</p></div>
-  </section>
-
-  <section class="panel log-panel" aria-labelledby="log-title">
-    <div class="log-head">
-      <h2 class="panel-title" id="log-title">Action log</h2>
-      <label class="log-filter"><input type="checkbox" id="log-actions-only"> Supervisor actions only</label>
-    </div>
-    <div class="log-wrap" id="log"><p class="empty">No alerts or actions yet.</p></div>
-  </section>
-
-  <footer>Qaiz hackathon prototype · simulated workers · WBGT estimated from weather data · not a certified safety device</footer>
-</div>
-
-<!-- Supervisor pop-ups appear here (bottom-right) -->
-<div id="alert-stack" class="alert-stack" role="region" aria-label="Supervisor alerts" aria-live="assertive"></div>
-<div id="toast" class="toast" role="status" hidden></div>
-
+<script src="/assets/resilia.js"></script>
 <script>
-  const POLL_MS = 3000;          // ask the server for new scores every 3 seconds
-  const STALE_SECONDS = 20;      // warn if the scores stop updating
-  const ICONS = { GREEN: "✓", YELLOW: "!", RED: "▲" };
-  const REDUCE_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+(function () {
+  const R = window.Resilia;
+  const { esc, hhmm } = R;
+  const LIMIT_NAMES = { 26: "heavy", 28: "moderate", 31: "light", 33: "resting" };
+  const crewLabel = (job) => (job === "delivery rider" ? "Delivery rider" : `${R.cap(job)} crew`);
 
-  // Gauge scales for the card bars: [min, max] and the scoring thresholds (ticks).
-  const HR_SCALE = { min: 50, max: 190, yellow: 130, red: 155 };
-  const SKIN_SCALE = { min: 33, max: 38, yellow: 35.5, red: 36.5 };
-  const WBGT_SCALE = { min: 20, max: 38, yellow: 28, red: 31 };
+  let selectedAlertId = null;      // which alert the big card shows (chips can switch it)
+  const expanded = new Set();      // crew rows opened for history
+  let logLimit = 6;
+  const trail = new Map();         // worker -> [{t, hr, skin}] collected while the page is open
 
-  let map = null;
-  let speed = 1;                 // demo speed reported by the risk engine (15 in --demo mode)
-  const workerDots = {};         // worker_id -> map marker
-  const siteMarkers = {};        // site name -> map marker
+  // ---------------------------------------------------------- derived data
+  const forecastMinutes = (w) => (w.forecast ? w.forecast.minutes : 99);
+  const sortCrew = (a, b) => R.STATUS[a.status].rank - R.STATUS[b.status].rank ||
+    (b.sos_pressed_at ? 1 : 0) - (a.sos_pressed_at ? 1 : 0) ||
+    (a.level === "RED" ? 0 : 1) - (b.level === "RED" ? 0 : 1) ||
+    forecastMinutes(a) - forecastMinutes(b) || a.worker_id.localeCompare(b.worker_id);
 
-  // Make text safe to put inside HTML.
-  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  function onShadeBreak(w) {
+    // A shade break logged in the last 10 simulated minutes.
+    const e = R.lastActionFor(w.worker_id, (x) => x.action === "shade_break");
+    if (!e || !e.sim_time || !R.state.scores) return false;
+    return (new Date(R.state.scores.sim_time) - new Date(e.sim_time)) / 60000 <= 10;
+  }
 
-  const pct = (v, s) => Math.max(0, Math.min(100, ((v - s.min) / (s.max - s.min)) * 100));
-  const zone = (v, s) => (v > s.red ? "RED" : v > s.yellow ? "YELLOW" : "GREEN");
-  const isAtRisk = (w) => w.level === "RED" || (w.forecast && w.forecast.level === "RED");
+  function forecastText(w) {
+    if (w.sos_pressed_at) return "Help requested";
+    if (onShadeBreak(w)) return "On shade break";
+    if (w.level === "RED") return "In the danger zone";
+    const f = w.forecast;
+    if (f && f.level === "RED") return `Danger in ~${f.minutes} min`;
+    if (f) return `Watch · ~${f.minutes} min`;
+    if (w.status === "rising") return "Watch";
+    return "Stable";
+  }
 
-  // ---------------- Smooth number changes ----------------
-  // Numbers count up/down to their new value instead of jumping.
-  function tweenNumber(el, to, decimals = 0) {
-    const from = parseFloat(el.dataset.v);
-    el.dataset.v = to;
-    if (REDUCE_MOTION || isNaN(from) || from === to) {
-      el.textContent = Number(to).toFixed(decimals);
-      return;
+  // ---------------------------------------------------------------- SOS
+  function renderSOS() {
+    const box = document.getElementById("sos");
+    const sos = R.alerts().filter((a) => a.kind === "sos").filter((a) => R.state.site === "all" || a.site === R.state.site);
+    if (!sos.length) { box.hidden = true; R.setHTML(box, ""); return; }
+    if (box.hidden) {  // newly appearing: fade in once
+      box.classList.add("appearing");
+      setTimeout(() => box.classList.remove("appearing"), 400);
     }
-    cancelAnimationFrame(el._raf);
-    const start = performance.now();
-    const duration = 650;
-    const step = (now) => {
-      // Keep progress between 0 and 1. A frame's timestamp can be slightly earlier
-      // than `start`, which would otherwise show values like "-0" for a moment.
-      const k = Math.max(0, Math.min(1, (now - start) / duration));
-      const eased = 1 - Math.pow(1 - k, 3);
-      el.textContent = (from + (to - from) * eased).toFixed(decimals);
-      if (k < 1) el._raf = requestAnimationFrame(step);
-    };
-    el._raf = requestAnimationFrame(step);
+    const a = sos.find((x) => !R.isHandled(x)) || sos[0];
+    const handled = R.handledAction(a);
+    const secs = R.secondsSince(a.started_at);
+    const still = a.motionless_s ? `no movement for ${a.motionless_s} s` : "moving";
+    const kicker = handled
+      ? `Responding · ${esc(handled.label)} at ${R.entryTime(handled)} · helmet still signalling`
+      : `Help requested · ${R.ago(secs)}`;
+    box.hidden = false;
+    box.classList.toggle("responding", !!handled);
+    R.setHTML(box, `
+      <div class="sos-badge" aria-hidden="true">SOS</div>
+      <div>
+        <div class="sos-kicker">${kicker}</div>
+        <h2>${esc(a.worker_id)} held the helmet button</h2>
+        <p>${esc(crewLabel(a.job))} · ${esc(a.site)}, Zone ${esc(a.zone || "?")} · last vitals: ${a.heart_rate_bpm} bpm, forehead ${Number(a.skin_temp_c).toFixed(1)} °C, ${still}</p>
+      </div>
+      <div class="sos-actions">
+        ${R.actionButton("on_my_way", a.worker_id, a.alert_id, "btn btn-primary")}
+        ${R.actionButton("send_first_aider", a.worker_id, a.alert_id, "btn btn-outline")}
+        ${R.actionButton("call_999", a.worker_id, a.alert_id, "btn btn-danger")}
+        ${R.state.viewOnly ? '<span class="hint">View-only link: the supervisor responds from the control room.</span>' : ""}
+      </div>
+      ${sos.length > 1 ? `<div class="sos-more">+ ${sos.length - 1} more help request${sos.length > 2 ? "s" : ""}: ${sos.filter((x) => x !== a).map((x) => esc(x.worker_id)).join(", ")}</div>` : ""}`);
   }
 
-  // ---------------- Clock (UAE time) ----------------
-  function tickClock() {
-    const now = new Date();
-    let time, date;
-    try {
-      time = now.toLocaleTimeString("en-GB", { timeZone: "Asia/Dubai", hour12: false });
-      date = now.toLocaleDateString("en-GB", { timeZone: "Asia/Dubai", weekday: "short", day: "numeric", month: "short" }) + " · GST";
-    } catch {
-      time = now.toLocaleTimeString();
-      date = now.toLocaleDateString();
-    }
-    document.getElementById("clock-time").textContent = time;
-    document.getElementById("clock-date").textContent = date;
-  }
-
-  // LIVE indicator: green pulsing when data is fresh, amber while switching, red when stale.
-  function setLive(state, text) {
-    const pill = document.getElementById("live-pill");
-    pill.classList.toggle("is-live", state === "live");
-    pill.classList.toggle("is-warn", state === "warn");
-    pill.classList.toggle("is-down", state === "down");
-    document.getElementById("live-text").textContent = text;
-  }
-
-  // ---------------- Map ----------------
-  function setupMap() {
-    if (typeof L === "undefined") {
-      document.getElementById("map").innerHTML =
-        '<p class="map-fallback">The map needs an internet connection to load. Cards and scores still work.</p>';
-      return;
-    }
-    map = L.map("map", { scrollWheelZoom: false }).setView([24.8, 55.0], 8);
-    // Free OpenStreetMap tiles (no API key). A CSS colour filter (see .leaflet-tile-pane)
-    // turns them into a dark map that matches the control-room theme.
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 18,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-    }).addTo(map);
-    // Dot positions are worked out in screen pixels, so redo them after zooming.
-    map.on("zoomend", () => { if (lastData) updateMap(lastData); });
-  }
-
-  // Dubai and Sharjah are only ~20 km apart, so at this zoom their dot rings and
-  // labels collide. We nudge each group a few pixels apart (a dashed line points
-  // back to the real location) and put the labels on the outer sides.
-  const SITE_LAYOUT = {
-    "Dubai":     { dx: -42, dy: 14,  side: "left" },
-    "Sharjah":   { dx: 34,  dy: -34, side: "right" },
-    "Abu Dhabi": { dx: 0,   dy: 0,   side: "left" },
-    "Al Ain":    { dx: 0,   dy: 0,   side: "right" },
-  };
-  const RING_PX = 22;  // radius of each site's ring of worker dots, in pixels
-  const DOT_PX = 8;    // radius of a worker dot
-  let lastData = null;
-  let fitted = false;
-  const siteLines = {};   // site -> dashed line from real location to the dot group
-
-  // How far to nudge groups apart: fully when zoomed out, not at all once
-  // the cities are far enough apart on screen by themselves.
-  function nudgeScale() {
-    const z = map.getZoom();
-    return z <= 8 ? 1 : z === 9 ? 0.5 : 0;
-  }
-
-  // Screen-pixel maths: convert lat/lon to pixels, move, convert back.
-  function offsetLatLng(latlng, dx, dy) {
-    const z = map.getZoom();
-    const p = map.project(latlng, z);
-    return map.unproject(L.point(p.x + dx, p.y + dy), z);
-  }
-
-  function groupCentre(name, s) {
-    const layout = SITE_LAYOUT[name] || { dx: 0, dy: 0 };
-    const k = nudgeScale();
-    return offsetLatLng(L.latLng(s.lat, s.lon), layout.dx * k, layout.dy * k);
-  }
-
-  // Spread a site's workers evenly around a ring so their dots don't overlap.
-  function ringPosition(centre, index, total) {
-    const angle = (2 * Math.PI * index) / Math.max(total, 1) - Math.PI / 2;
-    return offsetLatLng(centre, RING_PX * Math.cos(angle), RING_PX * Math.sin(angle));
-  }
-
-  function updateMap(data) {
-    if (!map) return;
-    lastData = data;
-    const sites = data.sites || {};
-
-    // First time: zoom so all four sites (plus their labels) fit.
-    if (!fitted) {
-      const pts = Object.values(sites).filter((s) => s.lat != null).map((s) => [s.lat, s.lon]);
-      if (pts.length) {
-        map.fitBounds(pts, { padding: [120, 60], maxZoom: 9 });
-        fitted = true;
-      }
-    }
-
-    // Site markers: a small hollow circle at the real location, a dashed line to
-    // the (possibly nudged) dot group, and a label on the outer side of the group.
-    const centres = {};
-    for (const [name, s] of Object.entries(sites)) {
-      if (s.lat == null) continue;
-      const real = L.latLng(s.lat, s.lon);
-      const centre = groupCentre(name, s);
-      centres[name] = centre;
-      const side = (SITE_LAYOUT[name] || {}).side || "right";
-      const label = `<span class="site-label-name">${esc(name)}</span><br><span class="site-label-wbgt">WBGT ${s.wbgt_c.toFixed(1)}°C</span>`;
-
-      if (!siteMarkers[name]) {
-        siteLines[name] = L.polyline([real, centre], {
-          color: "#7081a0", weight: 1.5, dashArray: "3 4", interactive: false,
-        }).addTo(map);
-        L.circleMarker(real, {
-          radius: 4, color: "#a7b4c8", weight: 2, fillColor: "#0a1324", fillOpacity: 1, interactive: false,
-        }).addTo(map);
-        // An invisible anchor at the group centre carries the label.
-        siteMarkers[name] = L.circleMarker(centre, { radius: 0, opacity: 0, interactive: false })
-          .addTo(map)
-          .bindTooltip(label, {
-            permanent: true, direction: side, className: "site-label",
-            offset: [(side === "left" ? -1 : 1) * (RING_PX + DOT_PX + 4), 0],
-          });
-      } else {
-        siteMarkers[name].setLatLng(centre).setTooltipContent(label);
-      }
-      siteLines[name].setLatLngs([real, centre]);
-    }
-
-    // Worker dots (HTML markers, so they can glow and pulse), grouped by site.
-    const bySite = {};
-    for (const w of data.workers) (bySite[w.site] ||= []).push(w);
-    for (const [site, workers] of Object.entries(bySite)) {
-      workers.sort((a, b) => a.worker_id.localeCompare(b.worker_id)); // stable ring order
-      workers.forEach((w, i) => {
-        if (!centres[site]) return;
-        const pos = ringPosition(centres[site], i, workers.length);
-        const tip =
-          `<b>${esc(w.worker_id)}</b> · ${ICONS[w.level]} ${w.level}<br>` +
-          `<span style="text-transform:capitalize">${esc(w.job)}</span>, ${esc(w.site)}<br>` +
-          `Heart rate ${w.avg_heart_rate_bpm} bpm · Skin ${w.avg_skin_temp_c}°C<br>` +
-          `Activity: ${esc(w.activity_level)}` +
-          (w.forecast ? `<br><b>↗ ${forecastText(w.forecast)}</b>` : "");
-        let dot = workerDots[w.worker_id];
-        if (!dot) {
-          const icon = L.divIcon({
-            className: "wmarker",
-            html: '<span class="wdot"></span>',
-            iconSize: [DOT_PX * 2, DOT_PX * 2],
-            iconAnchor: [DOT_PX, DOT_PX],
-          });
-          dot = L.marker(pos, { icon, keyboard: false, riseOnHover: true })
-            .addTo(map)
-            .on("click", () => focusCard(w.worker_id));
-          dot.bindTooltip("", { direction: "top", offset: [0, -10], className: "wtip" });
-          workerDots[w.worker_id] = dot;
-        }
-        dot.setLatLng(pos);
-        dot.setTooltipContent(tip);
-        // Update the dot's colour/pulse in place, so the colour change animates.
-        const el = dot.getElement() && dot.getElement().firstChild;
-        if (el) el.className = `wdot lvl-${w.level}${isAtRisk(w) ? " risk" : ""}`;
-        dot.setZIndexOffset(isAtRisk(w) ? 1000 : 0);
-      });
-    }
-  }
-
-  function focusCard(id) {
-    const card = document.getElementById("card-" + id);
-    if (!card) return;
-    card.scrollIntoView({ behavior: REDUCE_MOTION ? "auto" : "smooth", block: "center" });
-    card.classList.add("flash");
-    setTimeout(() => card.classList.remove("flash"), 1500);
-  }
-
-  // ---------------- KPI tiles ----------------
+  // ------------------------------------------------------ headline + KPIs
   function renderSummary(workers) {
-    for (const lvl of ["GREEN", "YELLOW", "RED"]) {
-      tweenNumber(document.getElementById("count-" + lvl), workers.filter((w) => w.level === lvl).length);
-    }
-    tweenNumber(document.getElementById("count-rising"), workers.filter((w) => w.forecast).length);
-    document.querySelectorAll(".kpi .total").forEach((el) => { el.textContent = workers.length; });
-    document.getElementById("kpi-RED").classList.toggle("hot", workers.some((w) => w.level === "RED"));
-    document.getElementById("workers-count").textContent = `· ${workers.length} workers`;
+    const s = R.state.scores;
+    const count = (k) => workers.filter((w) => w.status === k).length;
+    const act = count("act"), rising = count("rising"), steady = count("steady");
+
+    const date = new Date(s.sim_time).toLocaleDateString("en-GB", { timeZone: "Asia/Dubai", weekday: "long", day: "numeric", month: "long" });
+    const scope = R.state.site === "all" ? "All sites" : R.state.site;
+    R.setHTML(document.getElementById("eyebrow"),
+      `${esc(date)} · ${esc(scope)} · Simulated helmets · ${esc(R.statusWarn ? "" : R.statusText)}` +
+      (R.statusWarn ? `<span class="warn">${esc(R.statusText)}</span>` : ""));
+
+    let headline;
+    if (!workers.length) headline = "No helmets reporting yet.";
+    else if (!act && !rising) headline = "The whole crew is steady.";
+    else if (!act) headline = `Most of the crew is steady. ${R.numberWord(rising)} ${rising === 1 ? "worker is" : "workers are"} rising.`;
+    else if (steady >= workers.length / 2) headline = `Most of the crew is steady. ${R.numberWord(act)} ${act === 1 ? "worker needs" : "workers need"} you now.`;
+    else headline = `${R.numberWord(act)} ${act === 1 ? "worker needs" : "workers need"} you now.`;
+    document.getElementById("headline").textContent = headline;
+
+    R.tween(document.getElementById("k-shift"), workers.length);
+    R.tween(document.getElementById("k-steady"), steady);
+    R.tween(document.getElementById("k-rising"), rising);
+    R.tween(document.getElementById("k-act"), act);
+    document.getElementById("k-act-card").classList.toggle("hot", act > 0);
+    const sosN = workers.filter((w) => w.sos_pressed_at).length;
+    const redN = workers.filter((w) => !w.sos_pressed_at && w.level === "RED").length;
+    const pred = workers.filter((w) => !w.sos_pressed_at && w.level !== "RED" && w.forecast && w.forecast.level === "RED");
+    const parts = [];
+    if (sosN) parts.push(`${sosN} help call${sosN > 1 ? "s" : ""}`);
+    if (redN) parts.push(`${redN} in the danger zone`);
+    if (pred.length) parts.push(`${pred.length} predicted in ${Math.min(...pred.map(forecastMinutes))} min`);
+    document.getElementById("k-act-sub").textContent = parts.join(" · ") || "nobody right now";
+
+    const d = s.devices || {};
+    R.tween(document.getElementById("k-conn"), d.connected ?? 0);
+    document.getElementById("k-total").textContent = `/${d.helmets ?? 0}`;
+    const gws = (d.gateways || []).length;
+    document.getElementById("k-gw-label").textContent = `Site gateways · ${gws}`;
+    document.getElementById("k-gw-sub").textContent =
+      `helmets connected · ${gws} gateway${gws === 1 ? "" : "s"} · synced ${d.last_sync_s ?? "?"} s ago`;
   }
 
-  // "Predicted: RED in ~12 min" line, only when the AI expects risk to rise.
-  // At demo speed, also say how long that really is (e.g. 6 min at 15x = ~24 s).
-  function forecastText(f) {
-    const text = `Predicted: ${f.level} in ~${f.minutes} min`;
-    return speed > 1 ? `${text} (≈${Math.round((f.minutes * 60) / speed)} s at demo speed)` : text;
-  }
-  function renderForecast(f) {
-    if (!f) return "";
-    return `<div class="forecast fc-${f.level}" title="AI forecast: chance this worker reaches ${f.level} within ${f.minutes} minutes">
-      <span class="fc-icon">↗</span><span><span class="ai-tag">AI</span> ${forecastText(f)}</span>
-      <span class="fc-prob">${Math.round(f.probability * 100)}% likely</span></div>`;
-  }
-
-  // ---------------- Site conditions (built once, then updated in place) ----------------
-  const siteEls = {};
-  function renderSites(sites) {
-    const box = document.getElementById("sites");
-    const entries = Object.entries(sites || {});
-    if (!entries.length) return;
-    if (box.querySelector(".empty")) box.innerHTML = "";
-    for (const [name, s] of entries) {
-      let el = siteEls[name];
-      if (!el) {
-        el = document.createElement("div");
-        el.className = "site";
-        el.innerHTML = `
-          <div class="site-row">
-            <span class="site-name">${esc(name)}<span class="sim-tag" hidden>SIMULATED</span></span>
-            <span class="site-wbgt"><span class="num" data-r="wbgt"></span><small>°C WBGT</small></span>
-          </div>
-          <div class="site-row">
-            <span class="site-detail" data-r="detail"></span>
-            <span class="site-cat" data-r="cat"></span>
-          </div>
-          <div class="track">
-            <div class="fill"></div>
-            <i class="tick" style="left:${pct(WBGT_SCALE.yellow, WBGT_SCALE)}%"></i>
-            <i class="tick" style="left:${pct(WBGT_SCALE.red, WBGT_SCALE)}%"></i>
-          </div>`;
-        box.appendChild(el);
-        siteEls[name] = el;
-      }
-      const z = zone(s.wbgt_c, WBGT_SCALE);
-      tweenNumber(el.querySelector('[data-r="wbgt"]'), s.wbgt_c, 1);
-      el.querySelector('[data-r="detail"]').textContent =
-        `${s.air_temp_c.toFixed(1)}°C air · ${Math.round(s.humidity_pct)}% humidity · ${Math.round(s.solar_w_m2)} W/m² sun`;
-      const cat = el.querySelector('[data-r="cat"]');
-      cat.textContent = { GREEN: "Low", YELLOW: "Moderate", RED: "High" }[z];
-      cat.className = `site-cat c-${z}`;
-      const fill = el.querySelector(".fill");
-      fill.className = `fill z-${z}`;
-      fill.style.width = pct(s.wbgt_c, WBGT_SCALE) + "%";
-      el.querySelector(".sim-tag").hidden = s.source !== "simulated";
-    }
+  // ------------------------------------------------------- featured alert
+  function candidateAlerts() {
+    const rank = (a) => (R.isHandled(a) ? 10 : 0) + (a.kind === "red" ? 0 : 1);
+    const statusOf = {};
+    (R.state.scores.workers || []).forEach((w) => { statusOf[w.worker_id] = w.status; });
+    return R.alerts()
+      // An alert stays open for 2 simulated minutes after the worker calms down
+      // (so a flicker doesn't re-alert). Only feature workers who are still at risk.
+      .filter((a) => statusOf[a.worker_id] === "act")
+      .filter((a) => a.kind !== "sos" && (R.state.site === "all" || a.site === R.state.site))
+      .sort((a, b) => rank(a) - rank(b) || (a.minutes ?? 0) - (b.minutes ?? 0) || a.worker_id.localeCompare(b.worker_id));
   }
 
-  // ---------------- Worker cards (built once, then updated in place) ----------------
-  // Updating in place (instead of rebuilding) is what lets bars slide, numbers
-  // count and colours fade smoothly. It also means a redraw can't swallow a click.
-  const cardEls = new Map();   // worker_id -> { el, refs, level }
-  let firstCardRender = true;
+  // How each activity reads in a sentence.
+  const DOING = { resting: "while resting", light: "during light work", moderate: "during moderate work", heavy: "under heavy work" };
+  const FOR = { resting: "resting", light: "light work", moderate: "moderate work", heavy: "heavy work" };
 
-  function meterHTML(key, label, unit, scale) {
-    return `
-      <div class="meter">
-        <div class="meter-row"><span class="meter-k">${label}</span>
-          <span class="meter-v"><b data-r="${key}v"></b> ${unit}</span></div>
-        <div class="track">
-          <div class="fill" data-r="${key}fill"></div>
-          <i class="tick" style="left:${pct(scale.yellow, scale)}%" title="Caution threshold"></i>
-          <i class="tick" style="left:${pct(scale.red, scale)}%" title="Danger threshold"></i>
-        </div>
-      </div>`;
+  function explain(w, alert) {
+    const parts = [];
+    const act = w.activity_level;
+    if (w.hr_change_5m >= 3) parts.push(`Heart rate has climbed ${Math.round(w.hr_change_5m)} bpm in the last 5 minutes ${DOING[act] || ""}`);
+    else parts.push(`Heart rate is ${w.avg_heart_rate_bpm} bpm ${DOING[act] || ""}`);
+    if (w.wbgt_c > w.wbgt_limit) parts.push(`while site WBGT (${w.wbgt_c.toFixed(1)}°) sits above the ${w.wbgt_limit}° safe limit for ${FOR[act] || "this work"}`);
+    else parts.push(`with site WBGT at ${w.wbgt_c.toFixed(1)}°`);
+    let text = parts.join(" ");
+    if (w.skin_points) text += `, and forehead temperature is ${w.avg_skin_temp_c.toFixed(1)} °C`;
+    text += ".";
+    if (alert.kind === "red") text += " This worker is in the danger zone now: get them into shade, cool them down and check on them.";
+    else text += ` Without a break, Resilia expects this worker to reach the danger zone in about ${alert.minutes} minutes.`;
+    return text;
   }
 
-  function createCard(id) {
-    const el = document.createElement("article");
-    el.className = "card entering";
-    el.id = "card-" + id;
-    el.addEventListener("animationend", (e) => {
-      if (e.animationName === "cardIn") el.classList.remove("entering");
-    });
-    setTimeout(() => el.classList.remove("entering"), 800);  // in case animations are off
-    el.innerHTML = `
-      <div class="card-top">
+  const arrow = (change, threshold) => (change >= threshold ? " ↑" : change <= -threshold ? " ↓" : "");
+
+  function renderFeatured() {
+    const box = document.getElementById("featured");
+    const list = candidateAlerts();
+    if (!list.some((a) => a.alert_id === selectedAlertId)) selectedAlertId = list[0] ? list[0].alert_id : null;
+    const alert = list.find((a) => a.alert_id === selectedAlertId);
+    const workers = (R.state.scores.workers || []);
+
+    if (!alert) {
+      box.classList.add("clear");
+      R.setHTML(box, `
+        <div class="fa-ring clear"><div class="fa-num">✓</div><div class="fa-unit">clear</div></div>
         <div>
-          <div class="card-id">${esc(id)}</div>
-          <div class="card-meta" data-r="meta"></div>
+          <div class="fa-meta"><span class="tag tag-steady">No heat alerts</span><span>AI watching ${R.workers().length} helmets</span></div>
+          <h2>No one is heading for the danger zone</h2>
+          <p>Resilia's AI checks every helmet continuously and will warn you here up to 15 minutes before a worker is likely to reach the danger zone.</p>
+        </div>`);
+      return;
+    }
+    box.classList.remove("clear");
+    const w = workers.find((x) => x.worker_id === alert.worker_id);
+    if (!w) return;
+    const red = alert.kind === "red";
+    const handled = R.handledAction(alert);
+    const conf = alert.probability != null ? `AI confidence ${Math.round(alert.probability * 100)}% · ` : "";
+    const ring = red
+      ? `<div class="fa-ring now"><div class="fa-num">NOW</div><div class="fa-unit">danger zone</div></div>`
+      : `<div class="fa-ring"><div class="fa-num">${alert.minutes ?? "?"}</div><div class="fa-unit">min${R.state.speed > 1 && alert.minutes ? ` (≈${Math.round(alert.minutes * 60 / R.state.speed)} s)` : ""}</div></div>`;
+    const others = list.filter((a) => a !== alert && !R.isHandled(a));
+    R.setHTML(box, `
+      ${ring}
+      <div>
+        <div class="fa-meta">
+          <span class="tag tag-act">▲ ${red ? "Heat stress now" : "Predicted heat stress"}</span>
+          <span>${conf}updated ${R.ago(R.secondsSince(R.state.scores.generated_at))}</span>
         </div>
-        <span class="badge" data-r="badge"></span>
+        <h2>${esc(w.worker_id)} · ${esc(crewLabel(w.job))}, ${esc(w.site)}</h2>
+        <p>${esc(explain(w, alert))}</p>
+        <div class="fa-metrics">
+          <div class="metric"><div class="k">Heart rate</div><div class="v">${w.avg_heart_rate_bpm} <small>bpm${arrow(w.hr_change_5m, 3)}</small></div></div>
+          <div class="metric"><div class="k">Skin temp</div><div class="v">${w.avg_skin_temp_c.toFixed(1)} <small>°C${arrow(w.skin_change_5m, 0.2)}</small></div></div>
+          <div class="metric"><div class="k">Site WBGT</div><div class="v">${w.wbgt_c.toFixed(1)} <small>°C</small></div></div>
+        </div>
+        <div class="fa-actions">
+          ${R.actionButton("dispatch_water", w.worker_id, alert.alert_id, "btn btn-primary")}
+          ${R.actionButton("shade_break", w.worker_id, alert.alert_id, "btn btn-outline")}
+          ${R.actionButton("buzz", w.worker_id, alert.alert_id, "btn btn-text")}
+          <button type="button" class="btn btn-text" data-locate="${esc(w.worker_id)}" data-key="loc-${esc(w.worker_id)}">Show location · Zone ${esc(w.zone || "?")}</button>
+        </div>
+        ${handled ? `<div class="fa-handled">✓ ${esc(handled.label)} at ${R.entryTime(handled)}${R.responseSeconds(handled) != null ? ` · ${R.responseSeconds(handled)} s after the alert` : ""}. Resilia keeps watching.</div>` : ""}
+        ${R.state.viewOnly ? '<div class="fa-handled">View-only link: the supervisor responds from the control room.</div>' : ""}
+        ${others.length ? `<div class="fa-others">Also needs attention:
+          ${others.map((o) => `<button type="button" class="chip" data-pick="${esc(o.alert_id)}" data-key="pick-${esc(o.alert_id)}">${esc(o.worker_id)} · ${o.kind === "red" ? '<span class="st-act">▲ now</span>' : `<span class="st-act">↗ ~${o.minutes} min</span>`}</button>`).join("")}</div>` : ""}
+      </div>`);
+  }
+
+  // ----------------------------------------------------- site conditions
+  function renderSitePanel(featuredWorker) {
+    const s = R.state.scores;
+    const sites = s.sites || {};
+    let site = R.state.site !== "all" ? R.state.site : featuredWorker ? featuredWorker.site : null;
+    if (!site || !sites[site]) site = Object.keys(sites).sort((a, b) => sites[b].wbgt_c - sites[a].wbgt_c)[0];
+    const c = sites[site];
+    const box = document.getElementById("site-panel");
+    if (!c) { R.setHTML(box, '<div class="sp-title">Waiting for site data…</div>'); return; }
+
+    const limit = featuredWorker && featuredWorker.site === site ? featuredWorker.wbgt_limit : 28;
+    const above = c.wbgt_c > 33 ? "above every work limit" : c.wbgt_c > 31 ? "above the light-work limit"
+      : c.wbgt_c > 28 ? "above the moderate-work limit" : c.wbgt_c > 26 ? "above the heavy-work limit" : "within all work limits";
+
+    // Trend line since the start of the shift (one point per simulated minute).
+    const pts = c.history || [];
+    let chart = "";
+    if (pts.length >= 2) {
+      const vals = pts.map((p) => p[1]);
+      const lo = Math.min(...vals, limit) - 0.8, hi = Math.max(...vals, limit) + 0.8;
+      const x = (i) => (i / (pts.length - 1)) * 400;
+      const y = (v) => 110 - ((v - lo) / (hi - lo)) * 100;
+      const line = pts.map((p, i) => `${x(i).toFixed(1)},${y(p[1]).toFixed(1)}`).join(" ");
+      chart = `<svg class="sp-chart" viewBox="0 0 400 115" preserveAspectRatio="none" aria-label="WBGT trend">
+          <line x1="0" x2="400" y1="${y(limit).toFixed(1)}" y2="${y(limit).toFixed(1)}" stroke="#f5a53c" stroke-width="1.5" stroke-dasharray="5 5" vector-effect="non-scaling-stroke"/>
+          <polyline points="${line}" fill="none" stroke="#f5c27a" stroke-width="2.5" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
+          <circle cx="${x(pts.length - 1).toFixed(1)}" cy="${y(vals[vals.length - 1]).toFixed(1)}" r="4" fill="#f5a53c"/>
+        </svg>
+        <div class="sp-axis"><span>${esc(pts[0][0])}</span><span>Limit ${limit}° (${LIMIT_NAMES[limit] === "resting" ? "resting" : `${LIMIT_NAMES[limit] || ""} work`})</span><span>Now</span></div>`;
+    } else {
+      chart = `<div class="sp-axis" style="margin-top:auto"><span>Trend appears after a few minutes…</span></div>`;
+    }
+    R.setHTML(box, `
+      <div class="sp-title">${esc(site)} · site conditions</div>
+      <div class="sp-big"><span class="sp-wbgt num">${c.wbgt_c.toFixed(1)}°</span><span class="sp-wbgt-note">WBGT · ${above}</span></div>
+      ${chart}
+      <div class="sp-stats">
+        <div>Air<b>${c.air_temp_c.toFixed(1)} °C</b></div>
+        <div>Humidity<b>${Math.round(c.humidity_pct)}%</b></div>
+        <div>Sun<b>${Math.round(c.solar_w_m2)} W/m²</b></div>
       </div>
-      <div class="meters">
-        ${meterHTML("hr", "♥ Heart rate", "bpm", HR_SCALE)}
-        ${meterHTML("skin", "🌡 Skin temp", "°C", SKIN_SCALE)}
-      </div>
-      <div class="chips"><span class="chip" data-r="activity"></span><span class="chip" data-r="wbgt"></span></div>
-      <div data-r="forecast"></div>
-      <div data-r="reasons"></div>
-      <div data-r="alert"></div>
-      <div class="actions" data-r="actions"></div>
-      <div data-r="last"></div>`;
-    const refs = {};
-    el.querySelectorAll("[data-r]").forEach((n) => { refs[n.dataset.r] = n; });
-    return { el, refs, level: null };
+      <div class="sp-src">${c.source === "open-meteo" ? "Live weather from Open-Meteo" : "Simulated summer weather"} · WBGT is estimated</div>`);
   }
 
-  function updateCard(c, w) {
-    const { el, refs } = c;
-    el.classList.remove("lvl-GREEN", "lvl-YELLOW", "lvl-RED");
-    el.classList.add("lvl-" + w.level);
-    el.classList.toggle("at-risk", isAtRisk(w));
+  // ------------------------------------------------------------ crew table
+  function spark(values, color) {
+    if (values.length < 2) return '<div class="hint">Collecting… (history starts when this page opens)</div>';
+    const lo = Math.min(...values), hi = Math.max(...values) + 0.001;
+    const pts = values.map((v, i) => `${(i / (values.length - 1) * 200).toFixed(1)},${(40 - (v - lo) / (hi - lo) * 34).toFixed(1)}`).join(" ");
+    return `<svg class="spark" viewBox="0 0 200 44" preserveAspectRatio="none"><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>`;
+  }
 
-    refs.meta.textContent = `${w.job} · ${w.site}`;
-
-    if (c.level !== w.level) {
-      refs.badge.className = `badge b-${w.level}`;
-      refs.badge.textContent = `${ICONS[w.level]} ${w.level}`;
-      if (c.level) {  // a real change, not the first draw: give the badge a little pop
-        refs.badge.classList.remove("pop");
-        void refs.badge.offsetWidth;
-        refs.badge.classList.add("pop");
+  function renderCrew(workers) {
+    const rows = [...workers].sort(sortCrew).map((w) => {
+      const open = expanded.has(w.worker_id);
+      const low = (w.battery_pct ?? 100) < 20;
+      let html = `<tr class="row" tabindex="0" data-row="${esc(w.worker_id)}" data-key="row-${esc(w.worker_id)}" aria-expanded="${open}">
+          <td><div class="w-id">${esc(w.worker_id)}</div><div class="w-job">${esc(w.job)}</div></td>
+          <td>${R.statusHTML(w.status)}</td>
+          <td class="num">${w.avg_heart_rate_bpm} bpm</td>
+          <td class="num">${w.avg_skin_temp_c.toFixed(1)} °C</td>
+          <td>${esc(forecastText(w))}</td>
+          <td class="helmet num${low ? " low" : ""}" title="Solar-charged battery">☀ ${w.battery_pct ?? "?"}%</td>
+        </tr>`;
+      if (open) {
+        const t = trail.get(w.worker_id) || [];
+        const actions = R.actionsFor(w.worker_id).slice(0, 4);
+        html += `<tr class="detail"><td colspan="6"><div class="detail-grid">
+            <div><h4>Heart rate (this session)</h4>${spark(t.map((p) => p.hr), "#ee5a4b")}</div>
+            <div><h4>Skin temp (this session)</h4>${spark(t.map((p) => p.skin), "#f5a53c")}</div>
+            <div><h4>Why</h4><ul class="detail-list">${(w.reasons.length ? w.reasons : ["No warning signs"]).map((r) => `<li>${esc(r)}</li>`).join("")}</ul></div>
+            <div><h4>Recent events</h4><ul class="detail-list">${actions.length ? actions.map((e) => `<li>${R.entryTime(e)} · ${esc(e.label || e.message)}</li>`).join("") : "<li>None yet</li>"}</ul></div>
+          </div>
+          <div class="detail-actions">
+            ${R.actionButton("dispatch_water", w.worker_id, w.alert ? w.alert.alert_id : null, "btn btn-outline btn-sm")}
+            ${R.actionButton("shade_break", w.worker_id, w.alert ? w.alert.alert_id : null, "btn btn-outline btn-sm")}
+            ${R.actionButton("buzz", w.worker_id, w.alert ? w.alert.alert_id : null, "btn btn-outline btn-sm")}
+            <button type="button" class="btn btn-text btn-sm" data-locate="${esc(w.worker_id)}" data-key="loc2-${esc(w.worker_id)}">Show on map · Zone ${esc(w.zone || "?")}</button>
+            <span class="hint">Helmet ${esc(w.helmet_id || "")} · ${esc(w.gateway || "")} · ${esc(w.site)}</span>
+          </div></td></tr>`;
       }
-      c.level = w.level;
-    }
-
-    tweenNumber(refs.hrv, w.avg_heart_rate_bpm, 0);
-    refs.hrfill.className = `fill z-${zone(w.avg_heart_rate_bpm, HR_SCALE)}`;
-    refs.hrfill.style.width = pct(w.avg_heart_rate_bpm, HR_SCALE) + "%";
-
-    tweenNumber(refs.skinv, w.avg_skin_temp_c, 1);
-    refs.skinfill.className = `fill z-${zone(w.avg_skin_temp_c, SKIN_SCALE)}`;
-    refs.skinfill.style.width = pct(w.avg_skin_temp_c, SKIN_SCALE) + "%";
-
-    refs.activity.textContent = `Activity: ${w.activity_level}`;
-    refs.wbgt.textContent = `WBGT ${w.wbgt_c.toFixed(1)}°C`;
-
-    setHTML(refs.forecast, renderForecast(w.forecast));
-    setHTML(refs.reasons, w.reasons.length
-      ? `<ul class="reasons">${w.reasons.map((r) => `<li>${esc(r)}</li>`).join("")}</ul>` : "");
-    setHTML(refs.alert, renderCardAlert(w));
-    setHTML(refs.actions, actionButtons(w.worker_id, w.alert));
-    setHTML(refs.last, renderLastAction(w.worker_id));
-  }
-
-  // Sort into calm risk groups (cards only move when a worker changes group):
-  // RED, then predicted RED, then YELLOW (rising first), then GREEN (rising first).
-  function riskRank(w) {
-    if (w.level === "RED") return 0;
-    if (w.forecast && w.forecast.level === "RED") return 1;
-    if (w.level === "YELLOW") return w.forecast ? 2 : 3;
-    return w.forecast ? 4 : 5;
-  }
-
-  function renderCards(workers) {
-    const box = document.getElementById("cards");
-    if (!workers.length) return;
-    if (box.querySelector(".empty")) box.innerHTML = "";
-
-    for (const w of workers) {
-      let c = cardEls.get(w.worker_id);
-      if (!c) {
-        c = createCard(w.worker_id);
-        cardEls.set(w.worker_id, c);
-        box.appendChild(c.el);
-      }
-      updateCard(c, w);
-    }
-
-    const sorted = [...workers].sort((a, b) => riskRank(a) - riskRank(b) || a.worker_id.localeCompare(b.worker_id));
-    const wanted = sorted.map((w) => cardEls.get(w.worker_id).el);
-    const current = [...box.children];
-    const changed = wanted.some((el, i) => current[i] !== el);
-    if (changed && !pointerIsDown) reorderCards(box, wanted, !firstCardRender);
-    firstCardRender = false;
-  }
-
-  // Move cards into their new order, gliding from old to new position ("FLIP").
-  function reorderCards(box, wanted, animate) {
-    const before = new Map(wanted.map((el) => [el, el.getBoundingClientRect()]));
-    const focused = document.activeElement;
-    wanted.forEach((el) => box.appendChild(el));
-    if (focused && box.contains(focused)) focused.focus({ preventScroll: true });
-    if (!animate || REDUCE_MOTION) return;
-    wanted.forEach((el) => {
-      const a = before.get(el);
-      const b = el.getBoundingClientRect();
-      const dx = a.left - b.left;
-      const dy = a.top - b.top;
-      if (dx || dy) {
-        el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "translate(0, 0)" }],
-                   { duration: 550, easing: "cubic-bezier(.2, .8, .2, 1)" });
-      }
-    });
-  }
-
-  function renderCardAlert(w) {
-    if (!w.alert) return "";
-    const handledBy = handledAction(w.alert);
-    if (handledBy) {
-      return `<div class="card-alert handled">✓ Alert handled: ${esc(handledBy.label)} at ${timeOf(handledBy.time)}</div>`;
-    }
-    const what = w.alert.kind === "red" ? "turned RED" : "predicted to reach RED";
-    return `<div class="card-alert">⚠ Alert open: ${what} at ${timeOf(w.alert.started_at)}. Not yet handled.</div>`;
-  }
-
-  function renderLastAction(workerId) {
-    const last = lastActionFor(workerId);
-    return last ? `<div class="last-action">Last action: ${esc(last.label)} at ${timeOf(last.time)}</div>` : "";
-  }
-
-  // ================= Interventions =================
-  // The risk engine decides WHEN to alert (data.alerts). This page plays the
-  // sound, shows the pop-ups, sends supervisor actions to the server, and shows
-  // the log. An alert counts as "handled" once any action is logged for it.
-
-  const ACTION_LABELS = {
-    dispatch_water: "💧 Dispatch water",
-    shade_break: "⛱ Schedule shade break",
-    acknowledge: "Acknowledge",
-  };
-  let openAlerts = [];          // from the risk engine
-  let logEntries = [];          // alerts + actions from the server, newest first
-  const inFlight = new Set();   // buttons waiting for the server (stops double clicks)
-  let recentLocal = [];         // actions just clicked, kept until the server log has them
-  let lastScores = null;
-
-  function mergeLog(serverEntries) {
-    const now = Date.now();
-    const same = (a, b) => a.time === b.time && a.worker_id === b.worker_id && a.action === b.action;
-    recentLocal = recentLocal.filter((l) => l.until > now && !serverEntries.some((s) => same(s, l.entry)));
-    return [...recentLocal.map((l) => l.entry), ...serverEntries]
-      .sort((a, b) => b.time.localeCompare(a.time));
-  }
-
-  const timeOf = (iso) => new Date(iso).toLocaleTimeString();
-
-  // An alert is handled by any action logged for it. If a "predicted" alert later
-  // ESCALATED to actual RED, only actions taken after that count: the supervisor
-  // must respond again, because the earlier response wasn't enough.
-  function handledAction(alert) {
-    return logEntries.find((e) => e.type === "action" && e.alert_id === alert.alert_id &&
-      (!alert.escalated_at || e.time >= alert.escalated_at)) || null;
-  }
-  const isHandled = (alert) => !!handledAction(alert);
-  function lastActionFor(workerId) {
-    return logEntries.find((e) => e.type === "action" && e.action !== "acknowledge" && e.worker_id === workerId);
-  }
-
-  function actionButtons(workerId, alert, withAck = false) {
-    if (viewOnly) return "";  // public link: watch only
-    const alertId = alert ? alert.alert_id : "";
-    const keys = withAck ? ["dispatch_water", "shade_break", "acknowledge"] : ["dispatch_water", "shade_break"];
-    return keys.map((a) => {
-      const key = `${a}:${workerId}:${withAck ? "popup" : "card"}`;
-      const primary = alert && !isHandled(alert) && a !== "acknowledge" ? " primary" : "";
-      return `<button type="button" class="act${primary}" data-action="${a}" data-worker="${esc(workerId)}"
-                data-alert="${esc(alertId)}" data-key="${key}"${inFlight.has(`${a}:${workerId}`) ? " disabled" : ""}>
-                ${ACTION_LABELS[a]}</button>`;
+      return html;
     }).join("");
+    R.setHTML(document.getElementById("crew-body"), rows || '<tr><td colspan="6" class="empty">No workers at this site.</td></tr>');
   }
 
-  // ---- Redrawing without losing clicks or keyboard focus ----
-  // Some parts are still redrawn as HTML. We skip those redraws while a mouse
-  // button / finger is held down (so clicks aren't swallowed), skip them when
-  // nothing changed, and put keyboard focus back on the same button afterwards.
-  let pointerIsDown = false;
-  document.addEventListener("pointerdown", () => { pointerIsDown = true; }, true);
-  document.addEventListener("pointerup", () => { pointerIsDown = false; }, true);
-  document.addEventListener("pointercancel", () => { pointerIsDown = false; }, true);
-
-  function setHTML(el, html) {
-    if (pointerIsDown || el._lastHTML === html) return;
-    const focusKey = el.contains(document.activeElement) ? document.activeElement.dataset.key : null;
-    el.innerHTML = html;
-    el._lastHTML = html;
-    if (focusKey) el.querySelector(`[data-key="${focusKey}"]`)?.focus();
-  }
-
-  // ---- Clicking an action button (on a card or a pop-up) ----
-  document.addEventListener("click", async (event) => {
-    const btn = event.target.closest("button[data-action]");
-    if (!btn) return;
-    const { action, worker } = btn.dataset;
-    const alertId = btn.dataset.alert || null;
-    const flightKey = `${action}:${worker}`;
-    if (inFlight.has(flightKey)) return;
-    inFlight.add(flightKey);
-    btn.disabled = true;
-    try {
-      const res = await fetch("/api/actions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ worker_id: worker, action, alert_id: alertId }),
-      });
-      const entry = await res.json();
-      if (!res.ok) throw new Error(entry.error || "failed");
-      // Show it straight away. Keep a local copy for a few seconds in case a
-      // refresh that started before the click comes back without it.
-      logEntries.unshift(entry);
-      recentLocal.push({ entry, until: Date.now() + 10000 });
-      showToast(`✓ ${entry.label} for ${worker}`);
-    } catch (err) {
-      showToast(`Couldn't log the action: ${err.message}`);
-    } finally {
-      inFlight.delete(flightKey);
-      renderInterventions();
-    }
+  document.getElementById("crew-body").addEventListener("click", (e) => {
+    if (e.target.closest("button")) return;
+    const row = e.target.closest("tr.row");
+    if (!row) return;
+    const id = row.dataset.row;
+    expanded.has(id) ? expanded.delete(id) : expanded.add(id);
+    render();
+  });
+  document.getElementById("crew-body").addEventListener("keydown", (e) => {
+    const row = e.target.closest("tr.row");
+    if (row && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); row.click(); }
   });
 
-  let toastTimer = null;
-  function showToast(text) {
-    const el = document.getElementById("toast");
-    el.textContent = text;
-    el.hidden = false;
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => { el.hidden = true; }, 3000);
-  }
-
-  // ---- Alert sound (made in the browser, no sound files needed) ----
-  // Browsers block sound until the user clicks the page once. Until then the
-  // sound button turns red and says "Click to enable sound".
-  let soundWanted = true;
-  try { soundWanted = localStorage.getItem("hs-sound") !== "off"; } catch {}
-  let audio = null;
-
-  function soundReady() { return soundWanted && audio && audio.state === "running"; }
-
-  let lockedAtPress = false;  // was sound still blocked when this click/keypress started?
-
-  function unlockAudio() {
-    lockedAtPress = soundWanted && !soundReady();
-    if (!soundWanted) return;
-    try {
-      audio ||= new (window.AudioContext || window.webkitAudioContext)();
-      audio.resume().then(updateSoundButton);
-    } catch {}
-  }
-  document.addEventListener("pointerdown", unlockAudio, { capture: true });
-  document.addEventListener("keydown", unlockAudio, { capture: true });
-
-  function updateSoundButton() {
-    const btn = document.getElementById("sound-btn");
-    const locked = soundWanted && !soundReady();
-    btn.textContent = !soundWanted ? "🔕 Sound off" : locked ? "🔔 Click to enable sound" : "🔔 Sound on";
-    btn.classList.toggle("locked", locked);
-    btn.setAttribute("aria-pressed", String(soundWanted));
-  }
-
-  document.getElementById("sound-btn").addEventListener("click", () => {
-    // Use the state from when the press STARTED: the press itself unlocks audio,
-    // so by now it may already look "on", and we mustn't toggle it straight off.
-    if (lockedAtPress || (soundWanted && !soundReady())) {
-      lockedAtPress = false;
-      unlockAudio();                       // first click: just unlock it
-      setTimeout(() => playAlert("predicted_red"), 100);  // short test beep
-    } else {
-      soundWanted = !soundWanted;
-      try { localStorage.setItem("hs-sound", soundWanted ? "on" : "off"); } catch {}
-      if (soundWanted) { unlockAudio(); setTimeout(() => playAlert("predicted_red"), 100); }
+  // -------------------------------------------------------------- action log
+  function logLine(e) {
+    const resp = e.type === "action" ? R.responseSeconds(e) : null;
+    switch (e.type) {
+      case "sos": return ["d-act", `${esc(e.worker_id)} held the helmet button · help requested`];
+      case "sos_cleared": return ["d-steady", `${esc(e.worker_id)}'s helmet stopped signalling SOS`];
+      case "alert": return e.kind === "red"
+        ? ["d-act", `${esc(e.worker_id)} reached the danger zone`]
+        : ["d-rising", `AI predicted heat stress for ${esc(e.worker_id)}${/~(\d+) min/.test(e.message) ? ` in ~${e.message.match(/~(\d+) min/)[1]} min` : ""}`];
+      case "alert_escalated": return ["d-act", `${esc(e.worker_id)} reached the danger zone (as predicted)`];
+      case "alert_cleared": return ["d-steady", `${esc(e.worker_id)} recovered · alert cleared`];
+      default: return ["", `${esc(e.label)} · ${esc(e.worker_id)}${resp != null ? `<span class="resp"> · ${resp} s after alert</span>` : ""}`];
     }
-    updateSoundButton();
-    renderInterventions();
-  });
-
-  function beep(freq, start, duration, volume) {
-    const osc = audio.createOscillator();
-    const gain = audio.createGain();
-    osc.type = "triangle";
-    osc.frequency.value = freq;
-    gain.gain.setValueAtTime(0.0001, start);
-    gain.gain.exponentialRampToValueAtTime(volume, start + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
-    osc.connect(gain).connect(audio.destination);
-    osc.start(start);
-    osc.stop(start + duration + 0.05);
-  }
-
-  // RED: three urgent high beeps. Predicted RED: two softer, lower beeps.
-  function playAlert(kind) {
-    if (!soundReady()) return;
-    const t = audio.currentTime + 0.05;
-    if (kind === "red") {
-      [0, 0.22, 0.44].forEach((d) => beep(988, t + d, 0.16, 0.35));
-    } else {
-      [0, 0.3].forEach((d) => beep(660, t + d, 0.22, 0.2));
-    }
-  }
-
-  // Play a sound for each NEW alert, and again if a predicted alert turns RED.
-  // Unhandled RED alerts beep again every 30 seconds as a reminder.
-  const heardAlerts = new Map();  // alert_id -> kind we've already beeped for
-  let lastReminder = Date.now();
-  const REMINDER_MS = 30000;
-
-  function soundForAlerts() {
-    let toPlay = null;
-    for (const a of openAlerts) {
-      if (isHandled(a)) { heardAlerts.set(a.alert_id, a.kind); continue; }
-      const heard = heardAlerts.get(a.alert_id);
-      if (heard !== a.kind && !(heard === "red")) {
-        heardAlerts.set(a.alert_id, a.kind);
-        if (a.kind === "red" || !toPlay) toPlay = a.kind;  // RED beats predicted
-      }
-    }
-    if (toPlay) {
-      playAlert(toPlay);
-      lastReminder = Date.now();
-    } else if (openAlerts.some((a) => a.kind === "red" && !isHandled(a)) && Date.now() - lastReminder > REMINDER_MS) {
-      playAlert("red");
-      lastReminder = Date.now();
-    }
-  }
-
-  // ---- Supervisor pop-ups ----
-  // Many alerts can be open at once (e.g. a hot afternoon), so the stack shows
-  // only the MOST URGENT few, with "+N more" to expand and a Hide button.
-  // A brand-new alert always brings the stack back, so nothing urgent is missed.
-  const POPUPS_SHOWN = window.matchMedia("(max-width: 600px)").matches ? 1 : 3;  // 1 on phones
-  let stackExpanded = false;
-  let stackHidden = false;
-  const seenInStack = new Set();   // alert ids the supervisor has already seen listed
-
-  function renderPopups() {
-    const waiting = openAlerts
-      .filter((a) => !isHandled(a))
-      .sort((a, b) => (a.kind === "red" ? 0 : 1) - (b.kind === "red" ? 0 : 1) || a.started_at.localeCompare(b.started_at));
-
-    // New alert (or one that just escalated to RED)? Un-hide the stack.
-    for (const a of waiting) {
-      const key = `${a.alert_id}:${a.kind}`;
-      if (!seenInStack.has(key)) { seenInStack.add(key); stackHidden = false; }
-    }
-
-    let html = "";
-    if (waiting.length) {
-      const reds = waiting.filter((a) => a.kind === "red").length;
-      const summary = `⚠ ${waiting.length} open alert${waiting.length > 1 ? "s" : ""}` +
-        (reds ? ` · ${reds} RED` : "");
-      html += `<div class="stack-head" role="status"><span>${summary}</span>
-        <button type="button" class="stack-btn" data-stack="${stackHidden ? "show" : "hide"}">${stackHidden ? "Show" : "Hide"}</button></div>`;
-    }
-    if (!stackHidden) {
-      const shown = stackExpanded ? waiting : waiting.slice(0, POPUPS_SHOWN);
-      html += shown.map(popupHTML).join("");
-      const more = waiting.length - shown.length;
-      if (more > 0) {
-        html += `<button type="button" class="stack-btn stack-more" data-stack="expand">+ ${more} more alert${more > 1 ? "s" : ""}: show all</button>`;
-      } else if (stackExpanded && waiting.length > POPUPS_SHOWN) {
-        html += `<button type="button" class="stack-btn stack-more" data-stack="collapse">Show fewer</button>`;
-      }
-      if (waiting.length && soundWanted && !soundReady()) {
-        html += `<div class="sound-hint">🔇 Alert sound is blocked by the browser. Click anywhere on the page to turn it on.</div>`;
-      }
-    }
-    setHTML(document.getElementById("alert-stack"), html);
-  }
-
-  function popupHTML(a) {
-    const now = a.current_level || "";
-    let title;
-    if (a.kind === "red") {
-      // An open RED alert stays open for a while after the worker calms down,
-      // so say "turned RED" and show where they are now.
-      title = now === "RED"
-        ? `<span class="icon">▲</span> ${esc(a.worker_id)} is RED`
-        : `<span class="icon">▲</span> ${esc(a.worker_id)} turned RED <span class="popup-now">now ${ICONS[now] || ""} ${esc(now)}</span>`;
-    } else {
-      title = `<span class="icon">↗</span> ${esc(a.worker_id)} predicted RED in ~${a.minutes ?? "?"} min` +
-        (speed > 1 && a.minutes ? ` (≈${Math.round((a.minutes * 60) / speed)} s)` : "");
-    }
-    return `<div class="popup kind-${a.kind}" role="alertdialog" aria-label="${esc(a.worker_id)} heat alert">
-        <div class="popup-title">${title}</div>
-        <div class="popup-meta">${esc(a.job)} · ${esc(a.site)} · alert since ${timeOf(a.started_at)}</div>
-        <div class="popup-msg">${esc(a.message || "")}</div>
-        ${viewOnly
-          ? `<div class="view-note">View-only link: the supervisor responds from the control room.</div>`
-          : `<div class="actions">${actionButtons(a.worker_id, a, true)}</div>`}
-        <button type="button" class="link" data-show-card="${esc(a.worker_id)}">Show card</button>
-      </div>`;
-  }
-
-  document.addEventListener("click", (event) => {
-    const link = event.target.closest("[data-show-card]");
-    if (link) focusCard(link.dataset.showCard);
-    const stackBtn = event.target.closest("[data-stack]");
-    if (stackBtn) {
-      const what = stackBtn.dataset.stack;
-      if (what === "hide") stackHidden = true;
-      if (what === "show") stackHidden = false;
-      if (what === "expand") stackExpanded = true;
-      if (what === "collapse") stackExpanded = false;
-      renderPopups();
-    }
-  });
-
-  // ---- Action log table ----
-  function describeLogEntry(e) {
-    if (e.type === "alert") {
-      return e.kind === "red"
-        ? { cls: "ev-alert", ev: "▲ Alert: turned RED", details: e.message }
-        : { cls: "ev-predicted", ev: "↗ Alert: predicted RED", details: e.message };
-    }
-    if (e.type === "alert_escalated") return { cls: "ev-alert", ev: "▲ Escalated: now RED", details: e.message };
-    if (e.type === "alert_cleared") return { cls: "ev-cleared", ev: "✓ Alert cleared", details: e.message };
-    // Supervisor action: also show how quickly it followed the alert.
-    let details = e.worker_level ? `Worker was ${esc(e.worker_level)}` : "";
-    // Response time = seconds since the latest alarm for this alert (raised or escalated).
-    // logEntries is newest-first, so the first match at or before the action is the latest.
-    const raised = logEntries.find((x) => (x.type === "alert" || x.type === "alert_escalated") &&
-      x.alert_id === e.alert_id && x.time <= e.time);
-    if (raised) {
-      const secs = Math.max(0, Math.round((new Date(e.time) - new Date(raised.time)) / 1000));
-      const what = raised.type === "alert_escalated" ? "escalation" : "alert";
-      details += `<span class="resp"> · response time ${secs} s after ${what}</span>`;
-    }
-    return { cls: "ev-action", ev: esc(e.label), details, raw: true };
   }
 
   function renderLog() {
-    const actionsOnly = document.getElementById("log-actions-only").checked;
-    const rows = logEntries.filter((e) => !actionsOnly || e.type === "action").slice(0, 100);
-    if (!rows.length) {
-      setHTML(document.getElementById("log"), '<p class="empty">No alerts or actions yet.</p>');
-      return;
-    }
-    const body = rows.map((e) => {
-      const d = describeLogEntry(e);
-      return `<tr><td class="t">${timeOf(e.time)}</td><td class="w">${esc(e.worker_id)}</td>
-        <td class="ev ${d.cls}">${d.ev}</td><td>${d.raw ? d.details : esc(d.details)}</td></tr>`;
-    }).join("");
-    setHTML(document.getElementById("log"),
-      `<table class="log"><thead><tr><th>Time</th><th>Worker</th><th>Event</th><th>Details</th></tr></thead>
-       <tbody>${body}</tbody></table>`);
+    const only = document.getElementById("log-actions-only").checked;
+    const site = R.state.site;
+    const siteOf = {};
+    (R.state.scores.workers || []).forEach((w) => { siteOf[w.worker_id] = w.site; });
+    const all = R.state.log.filter((e) => (!only || e.type === "action") && (site === "all" || siteOf[e.worker_id] === site));
+    const rows = all.slice(0, logLimit);
+    document.getElementById("log-more").hidden = all.length <= 6;
+    document.getElementById("log-more").textContent = logLimit > 6 ? "Show fewer" : `Show more (${all.length})`;
+    R.setHTML(document.getElementById("log"), rows.length
+      ? rows.map((e) => { const [cls, text] = logLine(e); return `<li><span class="t">${R.entryTime(e)}</span><span class="d ${cls}"></span><span>${text}</span></li>`; }).join("")
+      : '<li class="empty" style="display:block">No alerts or actions yet.</li>');
   }
-  document.getElementById("log-actions-only").addEventListener("change", renderLog);
+  document.getElementById("log-actions-only").addEventListener("change", render);
+  document.getElementById("log-more").addEventListener("click", () => { logLimit = logLimit > 6 ? 6 : 50; render(); });
 
-  // Redraw everything that depends on alerts or the log.
-  function renderInterventions() {
-    if (lastScores) renderCards(lastScores.workers);
-    renderPopups();
+  function renderSolar(workers) {
+    const bats = workers.map((w) => w.battery_pct).filter((b) => b != null);
+    const avg = bats.length ? Math.round(bats.reduce((a, b) => a + b, 0) / bats.length) : null;
+    const low = workers.filter((w) => (w.battery_pct ?? 100) < 20).map((w) => w.worker_id);
+    document.getElementById("solar-text").textContent = avg == null ? "Waiting for helmets…"
+      : `Solar strips average ${avg}% · ` + (low.length ? `${low.join(", ")} below 20%: swap the battery pack` : "none need a manual charge this shift");
+  }
+
+  // ------------------------------------------------------------------- map
+  let map = null, fitted = false, lastWorkers = [];
+  const dots = {}, siteMarkers = {}, siteLines = {};
+  const SITE_COORDS = { "Dubai": [25.2048, 55.2708], "Abu Dhabi": [24.4539, 54.3773], "Sharjah": [25.3463, 55.4209], "Al Ain": [24.2075, 55.7447] };
+  // Dubai and Sharjah are close: nudge their dot groups apart (dashed line to the real spot).
+  const LAYOUT = { "Dubai": { dx: -42, dy: 14, side: "left" }, "Sharjah": { dx: 34, dy: -34, side: "right" },
+                   "Abu Dhabi": { dx: 0, dy: 0, side: "left" }, "Al Ain": { dx: 0, dy: 0, side: "right" } };
+  const RING = 22, DOT = 8;
+
+  function setupMap() {
+    if (typeof L === "undefined") { document.getElementById("map").innerHTML = '<p class="map-fallback">The map needs an internet connection.</p>'; return; }
+    map = L.map("map", { scrollWheelZoom: false }).setView([24.8, 55.0], 8);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 18, attribution: "&copy; OpenStreetMap contributors" }).addTo(map);
+    map.on("zoomend", () => updateMap(lastWorkers));
+  }
+  const nudge = () => { const z = map.getZoom(); return z <= 8 ? 1 : z === 9 ? 0.5 : 0; };
+  function offset(ll, dx, dy) { const z = map.getZoom(); const p = map.project(ll, z); return map.unproject(L.point(p.x + dx, p.y + dy), z); }
+
+  function updateMap(workers) {
+    if (!map) return;
+    lastWorkers = workers;
+    if (!fitted) { map.fitBounds(Object.values(SITE_COORDS), { padding: [110, 50], maxZoom: 9 }); fitted = true; }
+    const sites = R.state.scores.sites || {};
+    const centres = {};
+    for (const [name, ll] of Object.entries(SITE_COORDS)) {
+      const lay = LAYOUT[name], k = nudge();
+      const real = L.latLng(ll), centre = offset(real, lay.dx * k, lay.dy * k);
+      centres[name] = centre;
+      const wbgt = sites[name] ? `WBGT ${sites[name].wbgt_c.toFixed(1)}°` : "";
+      const label = `<span class="site-label-name">${esc(name)}</span><br>${wbgt}`;
+      if (!siteMarkers[name]) {
+        siteLines[name] = L.polyline([real, centre], { color: "#7d8790", weight: 1.5, dashArray: "3 4", interactive: false }).addTo(map);
+        L.circleMarker(real, { radius: 4, color: "#10283a", weight: 2, fillColor: "#fff", fillOpacity: 1, interactive: false }).addTo(map);
+        siteMarkers[name] = L.circleMarker(centre, { radius: 0, opacity: 0, interactive: false }).addTo(map)
+          .bindTooltip(label, { permanent: true, direction: lay.side, className: "site-label", offset: [(lay.side === "left" ? -1 : 1) * (RING + DOT + 4), 0] });
+      } else siteMarkers[name].setLatLng(centre).setTooltipContent(label);
+      siteLines[name].setLatLngs([real, centre]);
+    }
+    const bySite = {};
+    for (const w of R.state.scores.workers || []) (bySite[w.site] ||= []).push(w);
+    for (const [site, list] of Object.entries(bySite)) {
+      list.sort((a, b) => a.worker_id.localeCompare(b.worker_id));
+      list.forEach((w, i) => {
+        if (!centres[site]) return;
+        const ang = (2 * Math.PI * i) / list.length - Math.PI / 2;
+        const pos = offset(centres[site], RING * Math.cos(ang), RING * Math.sin(ang));
+        const tip = `<b>${esc(w.worker_id)}</b> · ${R.STATUS[w.status].label}<br><span style="text-transform:capitalize">${esc(w.job)}</span> · Zone ${esc(w.zone || "?")}<br>${w.avg_heart_rate_bpm} bpm · ${w.avg_skin_temp_c} °C`;
+        let m = dots[w.worker_id];
+        if (!m) {
+          m = L.marker(pos, { icon: L.divIcon({ className: "wmarker", html: '<span class="wdot"></span>', iconSize: [16, 16], iconAnchor: [8, 8] }), keyboard: false })
+            .addTo(map).on("click", () => { expanded.add(w.worker_id); render(); document.querySelector(`[data-row="${w.worker_id}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" }); });
+          m.bindTooltip("", { direction: "top", offset: [0, -10], className: "wtip" });
+          dots[w.worker_id] = m;
+        }
+        m.setLatLng(pos).setTooltipContent(tip);
+        const el = m.getElement() && m.getElement().firstChild;
+        if (el) el.className = `wdot ${R.STATUS[w.status].cls}${el.classList.contains("focus") ? " focus" : ""}`;
+        m.setZIndexOffset(w.status === "act" ? 1000 : 0);
+      });
+    }
+  }
+
+  function locate(workerId) {
+    document.getElementById("map-card").scrollIntoView({ behavior: R.REDUCE_MOTION ? "auto" : "smooth", block: "center" });
+    const m = dots[workerId];
+    if (!m) return;
+    Object.values(dots).forEach((d) => d.getElement()?.firstChild?.classList.remove("focus"));
+    m.getElement()?.firstChild?.classList.add("focus");
+    m.openTooltip();
+    setTimeout(() => m.getElement()?.firstChild?.classList.remove("focus"), 6000);
+  }
+
+  document.addEventListener("click", (e) => {
+    const loc = e.target.closest("[data-locate]");
+    if (loc) locate(loc.dataset.locate);
+    const pick = e.target.closest("[data-pick]");
+    if (pick) { selectedAlertId = pick.dataset.pick; render(); }
+  });
+
+  // ----------------------------------------------------------------- render
+  function render() {
+    const s = R.state.scores;
+    if (!s) return;
+    // Remember each worker's readings while the page is open (for row history).
+    for (const w of s.workers || []) {
+      const t = trail.get(w.worker_id) || [];
+      if (!t.length || t[t.length - 1].t !== w.sim_time) t.push({ t: w.sim_time, hr: w.avg_heart_rate_bpm, skin: w.avg_skin_temp_c });
+      trail.set(w.worker_id, t.slice(-120));
+    }
+    const workers = R.workers();
+    renderSOS();
+    renderSummary(workers);
+    renderFeatured();
+    const fa = candidateAlerts().find((a) => a.alert_id === selectedAlertId);
+    renderSitePanel(fa ? (s.workers || []).find((w) => w.worker_id === fa.worker_id) : null);
+    renderCrew(workers);
     renderLog();
-  }
-
-  // ---------------- Weather switch ----------------
-  // Rule: the switch shows the mode the risk engine ACTUALLY used for the scores
-  // on screen. The only exception is the few seconds after a click, while we wait
-  // for the engine to confirm. Each click gets a version number from the server;
-  // the engine reports which version it has applied, so an older result can't
-  // flip the switch back by mistake.
-  const SWITCH_TIMEOUT_MS = 45000;
-  let actualMode = null;   // what the engine last reported
-  let pending = null;      // { mode, version, since } while waiting for the engine
-
-  function showMode(mode) {
-    document.querySelectorAll(".switch button").forEach((b) =>
-      b.setAttribute("aria-pressed", String(b.dataset.mode === mode)));
-  }
-
-  document.querySelectorAll(".switch button").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      if (viewOnly) return;  // public link: watch only
-      const mode = btn.dataset.mode;
-      if (pending ? pending.mode === mode : actualMode === mode) return; // already there
-      // Version is unknown until the server answers; Infinity = "not confirmed yet".
-      const request = { mode, version: Infinity, since: Date.now() };
-      pending = request;
-      showMode(mode);
-      setStatus("Switching… (takes a few seconds)");
-      setLive("warn", "SWITCHING");
-      try {
-        const res = await fetch("/api/mode", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ weather_mode: mode }),
-        });
-        if (!res.ok) throw new Error("server said no");
-        const saved = await res.json();
-        if (pending === request) pending.version = saved.version;
-      } catch {
-        // The change never reached the server: put the switch back to the truth.
-        if (pending === request) pending = null;
-        showMode(actualMode);
-        setStatus("Couldn't change the weather mode: server not reachable", true);
-      }
-    });
-  });
-
-  function setStatus(text, warn = false) {
-    const el = document.getElementById("status");
-    el.textContent = text;
-    el.classList.toggle("warn", warn);
-  }
-
-  // ---------------- Polling loop ----------------
-  async function refresh() {
-    try {
-      // Fetch scores and the alert/action log at the same time.
-      const [res, logRes] = await Promise.all([
-        fetch("/api/scores", { cache: "no-store" }),
-        fetch("/api/log", { cache: "no-store" }).catch(() => null),
-      ]);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "No data");
-      if (logRes && logRes.ok) logEntries = mergeLog((await logRes.json()).entries || []);
-      lastScores = data;
-      openAlerts = data.alerts || [];
-
-      speed = data.speed || 1;
-      const demo = document.getElementById("demo-badge");
-      demo.hidden = speed <= 1;
-      demo.textContent = `⏩ ${speed}× DEMO`;
-
-      renderSummary(data.workers);
-      renderSites(data.sites);
-      updateMap(data);
-      renderInterventions();   // cards, pop-ups and log
-      soundForAlerts();
-
-      // Weather switch: trust the engine's report, unless we're waiting on a click.
-      actualMode = data.weather_mode;
-      let timedOut = false;
-      if (pending && (data.settings_version ?? 0) >= pending.version) {
-        pending = null;  // the engine has applied our change (or a newer one)
-      } else if (pending && Date.now() - pending.since > SWITCH_TIMEOUT_MS) {
-        pending = null;  // gave up waiting: show what's really happening
-        timedOut = true;
-      }
-      showMode(pending ? pending.mode : actualMode);
-
-      const ageSeconds = (Date.now() - new Date(data.generated_at).getTime()) / 1000;
-      const failed = data.live_weather_failed || [];
-      if (pending) {
-        setStatus("Switching… (takes a few seconds)");
-        setLive("warn", "SWITCHING");
-      } else if (timedOut) {
-        setStatus("The risk engine didn't confirm the switch. Is it running?", true);
-        setLive("down", "NO CONFIRM");
-      } else if (ageSeconds > STALE_SECONDS) {
-        setStatus(`Data is ${Math.round(ageSeconds)}s old. Is the risk engine running?`, true);
-        setLive("down", "STALE");
-      } else if (actualMode === "live" && failed.length) {
-        // Be honest: the switch says Live, but some sites couldn't get live weather.
-        setStatus(`Live weather unavailable for ${failed.join(", ")}. Showing simulated summer values there.`, true);
-        setLive("warn", "LIVE · PARTIAL");
-      } else {
-        const label = actualMode === "offline" ? "summer scenario" : "live weather from Open-Meteo";
-        setStatus(`Last update ${new Date(data.generated_at).toLocaleTimeString()} · ${label}`);
-        setLive("live", "LIVE");
-      }
-    } catch (err) {
-      setStatus("Waiting for the risk engine… " + err.message, true);
-      setLive("down", "OFFLINE");
-    }
-  }
-
-  // ---------------- View-only mode & public link ----------------
-  // The server tells us whether this visitor came through the public link
-  // (view-only) and, on the laptop, what the public link is.
-  let viewOnly = false;
-  let shareUrl = null;
-
-  async function loadAccess() {
-    try {
-      const res = await fetch("/api/access", { cache: "no-store" });
-      const access = await res.json();
-      const wasViewOnly = viewOnly;
-      viewOnly = !!access.view_only;
-      shareUrl = access.share_url || null;
-      document.body.classList.toggle("view-only", viewOnly);
-      document.getElementById("view-badge").hidden = !viewOnly;
-      document.querySelector(".switch").setAttribute("aria-disabled", String(viewOnly));
-      const pill = document.getElementById("share-pill");
-      pill.hidden = !shareUrl;
-      if (shareUrl) pill.innerHTML = `🌐 <span>Shared: ${esc(shareUrl.replace("https://", ""))}</span>`;
-      if (wasViewOnly !== viewOnly) renderInterventions();
-    } catch {}
-  }
-
-  document.getElementById("share-pill").addEventListener("click", async () => {
-    if (!shareUrl) return;
-    try {
-      await navigator.clipboard.writeText(shareUrl);
-      showToast("✓ Public link copied. Paste it in your team chat.");
-    } catch {
-      showToast(shareUrl);  // copying blocked: show it so it can be read out
-    }
-  });
-
-  // Ask again every 3 s (every 1 s at demo speed, so changes don't lag behind).
-  async function loop() {
-    await refresh();
-    setTimeout(loop, speed > 1 ? 1000 : POLL_MS);
+    renderSolar(workers);
+    updateMap(workers);
   }
 
   setupMap();
-  updateSoundButton();
-  tickClock();
-  setInterval(tickClock, 1000);
-  // Check access first (so view-only visitors never see buttons), then start.
-  // Re-check every 10 s: the public link appears a few seconds after start-up.
-  loadAccess().then(loop);
-  setInterval(loadAccess, 10000);
+  R.init({ page: "control", onData: render });
+})();
 </script>
 </body>
 </html>
