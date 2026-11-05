@@ -30,7 +30,7 @@ import sys
 import time
 from pathlib import Path
 
-from dashboard_server import SHARE_URL_FILE, write_mode
+from dashboard_server import SHARE_URL_FILE, is_hosted, write_mode
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
@@ -142,7 +142,7 @@ def main():
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     SHARE_URL_FILE.unlink(missing_ok=True)  # an old link is dead; don't show it
-    hosted = os.environ.get("RESILIA_PUBLIC") == "1"
+    hosted = is_hosted()   # RESILIA_PUBLIC or Render's PORT: same rule as the dashboard server
 
     # A host (e.g. Render) stops the service with SIGTERM: stop the programs cleanly too.
     def on_terminate(*_):
@@ -189,7 +189,8 @@ def main():
         cycle_started = time.time()
 
         if hosted:
-            print("\nHosted online: every visitor is view-only.", flush=True)
+            print(f"\nHosted online: dashboard listening on 0.0.0.0:{os.environ.get('PORT') or 10000}, "
+                  "every visitor is view-only.", flush=True)
         else:
             print("\nOpen http://localhost:8000 in your browser (full control on this laptop).")
         print("The first scores appear after about 5 seconds. Press Ctrl+C to stop everything.")
