@@ -104,6 +104,35 @@ button.hpill { cursor: pointer; }
 .hpill.alerts { color: #fff; background: rgba(238, 90, 75, 0.85); border-color: transparent; }
 .hpill.sound.locked { color: #ffe1b3; border-color: rgba(245, 165, 60, 0.6); animation: rs-soft 2s ease-in-out infinite; }
 
+/* ---- Options menu (site, sound, agent, demo, view-only, share) ---- */
+.menu-wrap { position: relative; }
+.menu-btn { cursor: pointer; gap: 8px; }
+.menu-btn[aria-expanded="true"] { background: rgba(255, 255, 255, 0.16); }
+.menu-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--sun); box-shadow: 0 0 8px rgba(245, 165, 60, .9); }
+.menu {
+  position: absolute; right: 0; top: calc(100% + 10px); z-index: 950; width: min(320px, calc(100vw - 32px));
+  background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: 16px;
+  box-shadow: 0 16px 40px rgba(16, 40, 58, 0.28); padding: 14px; display: grid; gap: 8px; animation: rs-menu .16s ease-out;
+}
+.menu[hidden] { display: none !important; }
+.menu-row { display: grid; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text-2); letter-spacing: .02em; }
+.menu-row select {
+  font: inherit; font-size: 15px; font-weight: 600; color: var(--navy); background: var(--sand);
+  border: 1px solid var(--line-2); border-radius: 10px; padding: 9px 12px; cursor: pointer;
+}
+.menu-item {
+  text-align: left; font-size: 14.5px; font-weight: 600; color: var(--navy); cursor: pointer; padding: 10px 12px;
+  border-radius: 10px; border: 1px solid var(--line-2); background: var(--card); display: grid; gap: 2px;
+}
+.menu-item:hover { background: var(--sand); }
+.menu-item.locked { border-color: var(--sun); background: var(--sun-soft); }
+.menu-item.share span { font-weight: 500; font-size: 12.5px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu-info { font-size: 13.5px; color: var(--text-2); padding: 8px 12px; border-radius: 10px; background: var(--sand); line-height: 1.45; }
+.menu-info .agent-dot { display: inline-block; margin-right: 6px; vertical-align: 1px; }
+.menu-info a { color: var(--navy); }
+.menu-info.view { background: var(--sun-soft); color: var(--text); }
+@keyframes rs-menu { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
 /* Compact header (pages other than the control room): a thin sunrise-to-sunset stripe */
 .rs-header.compact { background: #10263a; }
 .rs-header.compact .hdr-top { padding-bottom: 18px; }
@@ -112,6 +141,13 @@ button.hpill { cursor: pointer; }
 .hpill.agent { color: #fff; }
 .hpill.cta { background: var(--sun); color: var(--navy); border-color: var(--sun); font-weight: 700; }
 .hpill.cta:hover { background: #f7b457; }
+.hpill.cta.alerting { background: var(--coral); border-color: var(--coral); color: #fff; }
+/* Laptop widths: slightly tighter tabs so the header stays on one row. */
+@media (max-width: 1360px) {
+  .hdr-top { gap: 12px 18px; }
+  .nav a, .nav span { padding: 9px 13px; font-size: 14.5px; }
+  .brand-name { font-size: 24px; }
+}
 .hpill.agent b { color: #ffd18a; font-weight: 700; }
 .agent-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--sun); box-shadow: 0 0 10px rgba(245, 165, 60, .8); }
 

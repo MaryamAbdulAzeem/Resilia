@@ -308,9 +308,11 @@
     const btn = document.getElementById("rs-sound");
     if (!btn) return;
     const locked = soundWanted && !R.soundReady();
-    btn.textContent = !soundWanted ? "🔕 Sound off" : locked ? "🔔 Tap for sound" : "🔔 Sound on";
+    btn.textContent = !soundWanted ? "🔕 Alert sound off · tap to turn on" : locked ? "🔔 Tap to allow alert sound" : "🔔 Alert sound on · tap to mute";
     btn.classList.toggle("locked", locked);
     btn.setAttribute("aria-pressed", String(soundWanted));
+    const dot = document.getElementById("rs-menu-dot");
+    if (dot) dot.hidden = !locked;   // a small dot on the menu button while sound is blocked
   }
   function onSoundClick() {
     if (lockedAtPress || (soundWanted && !R.soundReady())) {
@@ -366,14 +368,24 @@
         <nav class="nav" aria-label="Main">${nav}</nav>
         <div class="hdr-right">
           <a class="hpill alerts" id="rs-alerts" href="/control-room.html" hidden></a>
-          ${opts.cta ? `<a class="hpill cta" href="/control-room.html">Open control room</a>` : ""}
-          <span class="hpill agent" id="rs-agent" hidden></span>
-          <span class="hpill demo" id="rs-demo" hidden></span>
-          <span class="hpill view" id="rs-view" hidden title="You're on the public link: you can watch, but actions are taken in the control room">👁 View only</span>
-          <button type="button" class="hpill share" id="rs-share" hidden title="Public view-only link for teammates. Click to copy."></button>
-          <label class="site-sel">Site <select id="rs-site">${siteOpts}</select></label>
+          ${opts.cta ? `<a class="hpill cta" id="rs-cta" href="/control-room.html">Open control room</a>` : ""}
           <span class="hpill live" id="rs-live" role="status"><i></i><span id="rs-live-text">Connecting</span></span>
-          <button type="button" class="hpill sound" id="rs-sound">🔔 Sound</button>
+          <!-- Smaller controls live in one menu, so the header stays on one row. -->
+          <div class="menu-wrap">
+            <button type="button" class="hpill menu-btn" id="rs-menu-btn" aria-expanded="false" aria-controls="rs-menu" aria-haspopup="true">
+              <span id="rs-menu-label">All sites</span><i class="menu-dot" id="rs-menu-dot" hidden title="Sound is blocked until you tap the page"></i>
+              <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+            </button>
+            <div class="menu" id="rs-menu" role="dialog" aria-label="Options" hidden>
+              <label class="menu-row">Site
+                <select id="rs-site">${siteOpts}</select></label>
+              <button type="button" class="menu-item sound" id="rs-sound">🔔 Sound</button>
+              <div class="menu-info" id="rs-agent" hidden></div>
+              <div class="menu-info" id="rs-demo" hidden></div>
+              <div class="menu-info view" id="rs-view" hidden>👁 You're on the public view-only link: you can watch, but actions are taken in the control room.</div>
+              <button type="button" class="menu-item share" id="rs-share" hidden title="Public view-only link for teammates. Click to copy."></button>
+            </div>
+          </div>
         </div>
       </div>
       ${arc}`;
@@ -386,6 +398,22 @@
       R.state.site = sel.value;
       try { localStorage.setItem("rs-site", sel.value); } catch {}
       R.emit();
+    });
+
+    // Options menu: opens on click, closes on outside click or Escape.
+    const menuBtn = document.getElementById("rs-menu-btn");
+    const menu = document.getElementById("rs-menu");
+    const setMenu = (open) => {
+      menu.hidden = !open;
+      menuBtn.setAttribute("aria-expanded", String(open));
+      if (open) sel.focus();
+    };
+    menuBtn.addEventListener("click", () => setMenu(menu.hidden));
+    document.addEventListener("click", (e) => {
+      if (!menu.hidden && !e.target.closest(".menu-wrap")) setMenu(false);
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !menu.hidden) { setMenu(false); menuBtn.focus(); }
     });
     document.getElementById("rs-sound").addEventListener("click", onSoundClick);
     document.getElementById("rs-share").addEventListener("click", async () => {
@@ -440,22 +468,33 @@
     const s = R.state.scores;
     const demo = document.getElementById("rs-demo");
     demo.hidden = R.state.speed <= 1;
-    demo.textContent = `⏩ ${R.state.speed}× demo`;
+    demo.textContent = `⏩ Demo running at ${R.state.speed}× speed: one simulated minute every ${Math.round(60 / R.state.speed)} s`;
     document.getElementById("rs-view").hidden = !R.state.viewOnly;
     const share = document.getElementById("rs-share");
     share.hidden = !R.state.shareUrl;
-    if (R.state.shareUrl) R.setHTML(share, `🌐 <span>${R.esc(R.state.shareUrl.replace("https://", ""))}</span>`);
+    if (R.state.shareUrl) R.setHTML(share, `🌐 Copy public link<span>${R.esc(R.state.shareUrl.replace("https://", ""))}</span>`);
+    // The menu button shows the chosen site (and an eye on the view-only link).
+    document.getElementById("rs-menu-label").textContent =
+      (R.state.viewOnly ? "👁 " : "") + (R.state.site === "all" ? "All sites" : R.state.site);
     // On pages other than the control room, show an alert chip linking back to it.
     const chip = document.getElementById("rs-alerts");
     const open = R.alerts().filter((a) => !R.isHandled(a));
-    chip.hidden = pageKey === "control" || !open.length;
-    if (open.length) chip.textContent = `⚠ ${open.length} open alert${open.length > 1 ? "s" : ""}`;
+    const alertText = `⚠ ${open.length} open alert${open.length > 1 ? "s" : ""}`;
+    chip.hidden = pageKey === "control" || !open.length || !!headerOpts.cta;
+    if (open.length) chip.textContent = alertText;
+    // Home: the alert badge and "Open control room" go to the same place, so
+    // they're one button (it turns coral while alerts are open).
+    const cta = document.getElementById("rs-cta");
+    if (cta) {
+      cta.textContent = open.length ? `⚠ ${open.length} alert${open.length > 1 ? "s" : ""} · Control room` : "Open control room";
+      cta.classList.toggle("alerting", open.length > 0);
+    }
     const agentPill = document.getElementById("rs-agent");
     const ag = s && s.agent;
-    agentPill.hidden = !(headerOpts.agentPill && ag && ag.active);
+    agentPill.hidden = !(ag && ag.active);
     if (ag && ag.active) {
-      agentPill.innerHTML = `<i class="agent-dot"></i>Agent active · ${ag.watching} helmets` +
-        (ag.waiting ? ` · <b>${ag.waiting} waiting</b>` : "");
+      R.setHTML(agentPill, `<i class="agent-dot"></i>AI agent active · watching ${ag.watching} helmets` +
+        (ag.waiting ? ` · <a href="/ai-agent.html"><b>${ag.waiting} waiting for you</b></a>` : ""));
     }
     if (s) updateArc();
   }
@@ -550,7 +589,7 @@
       else if (timedOut) { setLive("off", "No confirmation"); setStatus("The risk engine didn't confirm the switch. Is it running?", true); }
       else if (age > STALE_SECONDS) { setLive("off", `Paused · ${clock}`); setStatus(`Data is ${age} s old. Is the risk engine running?`, true); }
       else {
-        setLive("live", `Live · ${clock}${st.speed > 1 ? " (demo time)" : ""}`);
+        setLive("live", `Live · ${clock}${st.speed > 1 ? ` · ${st.speed}×` : ""}`);
         if (data.weather_mode === "live" && failed.length) {
           setStatus(`Live weather unavailable for ${failed.join(", ")}: using simulated values there`, true);
         } else {
