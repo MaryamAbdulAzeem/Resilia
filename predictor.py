@@ -97,6 +97,29 @@ class Predictor:
         base = extract_features(readings, wbgt, current_score)
         rows = [base + [h] for h in HORIZONS]
         probabilities = self.model.predict_proba(rows)  # one row per horizon
+        return self.interpret(probabilities, current_level)
+
+    def forecast_many(self, items):
+        """
+        Same as forecast(), for many workers in ONE model call (much faster).
+        items: list of (readings, wbgt, current_level, current_score).
+        """
+        rows, todo = [], []
+        for i, (readings, wbgt, level, score) in enumerate(items):
+            if level == "RED":
+                continue
+            base = extract_features(readings, wbgt, score)
+            todo.append((i, len(rows), level))
+            rows.extend(base + [h] for h in HORIZONS)
+        out = [None] * len(items)
+        if rows:
+            probs = self.model.predict_proba(rows)
+            for i, start, level in todo:
+                out[i] = self.interpret(probs[start:start + len(HORIZONS)], level)
+        return out
+
+    def interpret(self, probabilities, current_level):
+        """Turn the model's probabilities (one row per horizon) into a forecast, or None."""
         classes = list(self.model.classes_)             # e.g. [0, 1, 2]
 
         def chance_at_least(row, level_num):

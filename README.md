@@ -80,7 +80,7 @@ for steady; Space Grotesk headings, Inter body) shows:
   solar battery, and a **crew map**.
 
 Status words: **Act now** = SOS, RED or predicted RED · **Rising** = body signs
-of strain or a rising forecast · **Steady** = everything else (a worker who is
+of strain (raised heart rate or skin temperature) · **Steady** = everything else (a worker who is
 YELLOW only because the site is hot shows as Steady). Every status shows a word
 and a dot, so colour is never the only signal. "Call 999" only records the
 decision: the supervisor dials 999 themselves.
@@ -124,9 +124,26 @@ Built live from the shift (written to `data/insights.json`):
   of data), water stations, how much risk falls outside the 12:30–15:00 midday
   ban, and which crews need extra breaks. **Copy brief** copies them as text.
 
-The design's "emergencies avoided / AED saved" and weekly figures were left out:
-the prototype has no real basis for them. In demo mode one simulated hour takes
-about 4 real minutes, so the heat-map fills in as the demo runs.
+Two views, switched at the top of the page:
+- **Past 30 days** (selected by default): **simulated history**, labelled as such
+  on the page. `generate_history.py` replays 30 summer working days (06:00–18:00,
+  a different seed and slightly hotter or cooler weather each day) through the same
+  simulator, risk engine, AI forecast, AI agent and insights code as the live
+  system, and saves `models/history_30d.json` (included in the project, ~10 KB).
+  The alerts chart is shown by week. `run_all.py` rebuilds the file in the
+  background only if it's missing or out of date (about 2–3 minutes, using several
+  processor cores). To rebuild it by hand: `python generate_history.py`.
+- **Today (live)**: the running shift, as before. In demo mode one simulated hour
+  takes about 4 real minutes, so this heat-map fills in as the demo runs.
+
+The design's "emergencies avoided / AED saved" figures were left out: the
+prototype has no real basis for them. Next to "caught early", the page also shows
+how many danger-zone alerts came with no AI warning, so prevention isn't oversold.
+
+Status note: **Rising** means real body signs of strain (raised heart rate or
+skin temperature). A predicted RED makes a worker **Act now**. After a predicted
+alert clears, the same worker can't get another *predicted* alert for 15
+simulated minutes (RED and SOS alerts are never held back).
 
 ## Sharing a public link (view-only)
 

@@ -26,10 +26,15 @@ HOURS = list(range(6, 20))        # heat-map columns: 06:00 ... 19:00
 MIN_MINUTES_PER_CELL = 20         # a site-hour needs this many worker-minutes to count
 
 
+def _pair():
+    return [0, 0]
+
+
 class ShiftStats:
-    def __init__(self):
-        self.cells = defaultdict(lambda: [0, 0])      # (site, hour) -> [worker-minutes, at-risk worker-minutes]
-        self.jobs = defaultdict(lambda: [0, 0])       # (site, job)  -> [worker-minutes, at-risk]
+    def __init__(self, period="this shift"):
+        self.period = period   # how recommendations describe the time span
+        self.cells = defaultdict(_pair)               # (site, hour) -> [worker-minutes, at-risk worker-minutes]
+        self.jobs = defaultdict(_pair)                # (site, job)  -> [worker-minutes, at-risk]
         self.wbgt = defaultdict(list)                 # (site, hour) -> WBGT samples (one per minute)
         self.last_minute = {}                         # worker -> last minute counted
         self.site_minute = {}                         # site -> last minute WBGT sampled
@@ -37,6 +42,8 @@ class ShiftStats:
         self.risk_total = 0
         self.alerts_by_hour = Counter()
         self.interventions_by_hour = Counter()
+        self.alerts_by_day = Counter()           # "2026-11-05" -> alerts that day
+        self.interventions_by_day = Counter()
         self.water_by_site = Counter()
         self.warning_minutes = []                     # AI lead time (minutes) for each predicted alert
         self.predicted_ids = set()
@@ -44,7 +51,7 @@ class ShiftStats:
         self.red_alerts = 0
         self.interventions = 0
         self.site_of = {}
-        self.per_worker = defaultdict(lambda: [0, 0])  # worker -> [minutes on shift, minutes at risk]
+        self.per_worker = defaultdict(_pair)           # worker -> [minutes on shift, minutes at risk]
         self.worker_alerts = Counter()
         self.worker_breaks = Counter()
         self.worker_water = Counter()
@@ -82,9 +89,11 @@ class ShiftStats:
     def on_event(self, entry, alert=None):
         """Called for every alert, agent step and supervisor action."""
         try:
-            hour = datetime.fromisoformat(entry.get("sim_time") or "").hour
+            when = datetime.fromisoformat(entry.get("sim_time") or "")
         except ValueError:
-            hour = self.last_sim.hour if self.last_sim else None
+            when = self.last_sim
+        hour = when.hour if when else None
+        day = when.date().isoformat() if when else None
         kind, etype = entry.get("kind"), entry.get("type")
         wid = entry.get("worker_id")
         if etype in ("alert", "sos") and wid:
@@ -95,6 +104,8 @@ class ShiftStats:
             self.worker_water[wid] += 1
         if wid and entry.get("action") in ("short_break", "shade_break"):
             self.worker_breaks[wid] += 1
+        if etype in ("alert", "sos"):
+            self.alerts_by_day[day] += 1
         if etype == "alert":
             self.alerts_by_hour[hour] += 1
             if kind == "predicted_red":
@@ -113,8 +124,31 @@ class ShiftStats:
         if intervention:
             self.interventions += 1
             self.interventions_by_hour[hour] += 1
+            self.interventions_by_day[day] += 1
             if entry.get("action") in ("water", "dispatch_water"):
                 self.water_by_site[self.site_of.get(entry.get("worker_id"), "?")] += 1
+
+    def merge(self, other):
+        """Add another ShiftStats (e.g. another simulated day) into this one."""
+        for mine, theirs in ((self.cells, other.cells), (self.jobs, other.jobs), (self.per_worker, other.per_worker)):
+            for key, (m, r) in theirs.items():
+                mine[key][0] += m
+                mine[key][1] += r
+        for key, vals in other.wbgt.items():
+            self.wbgt[key].extend(vals)
+        for name in ("alerts_by_hour", "interventions_by_hour", "alerts_by_day", "interventions_by_day",
+                     "water_by_site", "worker_alerts", "worker_breaks", "worker_water", "worker_sos"):
+            getattr(self, name).update(getattr(other, name))
+        for name in ("risk_in_ban", "risk_total", "red_alerts", "interventions"):
+            setattr(self, name, getattr(self, name) + getattr(other, name))
+        self.warning_minutes.extend(other.warning_minutes)
+        self.predicted_ids |= other.predicted_ids
+        self.escalated_ids |= other.escalated_ids
+        self.site_of.update(other.site_of)
+        firsts = [t for t in (self.first_sim, other.first_sim) if t]
+        lasts = [t for t in (self.last_sim, other.last_sim) if t]
+        self.first_sim = min(firsts) if firsts else None
+        self.last_sim = max(lasts) if lasts else None
 
     # ------------------------------------------------------------- results
     def share(self, cell):
@@ -156,7 +190,7 @@ class ShiftStats:
             runs = sum(self.water_by_site[s] for s in hot)
             recs.append({"type": "Resources", "text":
                 f"Pre-position water stations at {_join(hot)} (average WBGT above 32 °C) instead of sending runners on demand: "
-                f"{runs} water run{'s' if runs != 1 else ''} went there this shift."})
+                f"{runs} water run{'s' if runs != 1 else ''} went there {self.period}."})
         elif self.water_by_site:
             site, runs = self.water_by_site.most_common(1)[0]
             recs.append({"type": "Resources", "text":
@@ -167,7 +201,7 @@ class ShiftStats:
             outside = 1 - self.risk_in_ban / self.risk_total
             recs.append({"type": "Policy", "text":
                 f"Use WBGT-based break rules alongside the fixed 12:30–15:00 midday work ban: "
-                f"{outside:.0%} of at-risk worker-time this shift fell outside the ban hours."})
+                f"{outside:.0%} of at-risk worker-time {self.period} fell outside the ban hours."})
 
         # 4) People: the job type that spends most time at risk.
         jobs = self.job_shares()
@@ -211,12 +245,17 @@ class ShiftStats:
             "jobs": {s: self.job_shares(s) for s in sites},
             "by_hour": {str(h): {"alerts": self.alerts_by_hour[h], "interventions": self.interventions_by_hour[h]}
                         for h in HOURS if self.alerts_by_hour[h] or self.interventions_by_hour[h]},
+            "by_day": {d: {"alerts": self.alerts_by_day[d], "interventions": self.interventions_by_day[d]}
+                       for d in sorted(set(self.alerts_by_day) | set(self.interventions_by_day)) if d},
             "kpis": {
                 "early_warnings": predicted,
                 "median_warning_minutes": round(statistics.median(self.warning_minutes)) if self.warning_minutes else None,
                 "interventions": self.interventions,
                 "caught_early_pct": round(100 * caught / predicted) if predicted else None,
                 "danger_alerts": self.red_alerts,
+                # Danger-zone alerts that came with NO earlier AI warning (e.g. a sudden
+                # switch to heavy work in extreme heat). Shown so "caught early" isn't oversold.
+                "unwarned_danger": self.red_alerts - len(self.escalated_ids),
                 "at_risk_share": round(self.risk_total / max(1, sum(c[0] for c in self.cells.values())), 3),
             },
             "recommendations": self.recommendations(),

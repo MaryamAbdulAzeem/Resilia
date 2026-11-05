@@ -43,6 +43,8 @@ SHARE_URL_FILE = BASE_DIR / "data" / "share_url.txt"  # written by run_all.py --
 AGENT_LOG_FILE = BASE_DIR / "data" / "agent.jsonl"      # every step the AI agent took
 AGENT_STATE_FILE = BASE_DIR / "data" / "agent_state.json"
 INSIGHTS_FILE = BASE_DIR / "data" / "insights.json"
+HISTORY_FILE = BASE_DIR / "models" / "history_30d.json"          # simulated 30-day history
+HISTORY_PROGRESS_FILE = BASE_DIR / "data" / "history_progress.json"
 PROPOSAL_ID = re.compile(r"^P\d{1,6}$")
 DECISIONS = {"approve": "Approved the agent's request", "override": "Overrode the agent's request"}
 
@@ -210,6 +212,18 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         if self.path.startswith("/api/mode"):
             return self.send_json(read_settings())
         if self.path.startswith("/api/insights"):
+            # ?range=30d -> the simulated 30-day history; otherwise today's live shift.
+            if "range=30d" in self.path:
+                try:
+                    return self.send_raw_json(HISTORY_FILE.read_bytes())
+                except OSError:
+                    progress = {}
+                    try:
+                        progress = json.loads(HISTORY_PROGRESS_FILE.read_text(encoding="utf-8"))
+                    except (OSError, ValueError):
+                        pass
+                    return self.send_json({"error": "The 30-day simulated history isn't ready yet.",
+                                           "progress": progress}, 503)
             try:
                 return self.send_raw_json(INSIGHTS_FILE.read_bytes())
             except OSError:

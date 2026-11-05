@@ -10,6 +10,14 @@
 <link rel="stylesheet" href="/assets/resilia.css">
 <style>
   .title-row { align-items: flex-end; }
+  .title-tools { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  /* Time-range switch (works on the view-only link too: it only changes the view) */
+  .range-switch { display: inline-flex; gap: 6px; padding: 4px; border-radius: 14px; background: var(--sand-2); }
+  .range-switch button { padding: 9px 16px; border-radius: 10px; border: 0; background: transparent; color: var(--text); font-weight: 600; cursor: pointer; }
+  .range-switch button[aria-pressed="true"] { background: var(--navy); color: #fff; }
+  .sim-badge { display: inline-flex; align-items: center; gap: 8px; margin: 0 0 14px; padding: 7px 14px; border-radius: 999px;
+               background: var(--sun-soft); border: 1px solid #f1dcb5; color: var(--gold-text); font-weight: 700; font-size: 13.5px; }
+  .sim-badge[hidden] { display: none !important; }
   .page-title { max-width: 38ch; }
   .kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; margin: 4px 0 24px; }
   @media (max-width: 1000px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -70,9 +78,16 @@
 <main class="wrap">
   <p class="eyebrow" id="eyebrow">For site managers, employers &amp; regulators</p>
   <div class="title-row">
-    <h1 class="page-title" id="headline">Collecting this shift's data…</h1>
-    <button type="button" class="btn btn-outline" id="copy-brief">Copy brief</button>
+    <h1 class="page-title" id="headline">Loading insights…</h1>
+    <div class="title-tools">
+      <div class="range-switch" role="group" aria-label="Time range">
+        <button type="button" data-range="30d" aria-pressed="true">Past 30 days</button>
+        <button type="button" data-range="today" aria-pressed="false">Today (live)</button>
+      </div>
+      <button type="button" class="btn btn-outline" id="copy-brief">Copy brief</button>
+    </div>
   </div>
+  <div class="sim-badge" id="sim-badge" hidden>⚠ Simulated history: generated with the Resilia simulator, not field data</div>
 
   <section class="kpis" aria-label="Shift summary">
     <div class="card kpi"><div class="kpi-label">Early warnings issued</div><div class="kpi-value num" id="k-warn">–</div><div class="kpi-sub">AI forecasts before the danger zone</div></div>
@@ -94,7 +109,7 @@
     <aside class="recs">
       <h2>What the data suggests</h2>
       <div id="recs"><div class="rec"><p>Waiting for data…</p></div></div>
-      <p class="note">Worked out from this shift's simulated helmets: illustrative, not field data.</p>
+      <p class="note" id="recs-note">Worked out from this shift's simulated helmets: illustrative, not field data.</p>
     </aside>
   </section>
 
@@ -105,13 +120,13 @@
       <p class="hint" style="margin:16px 0 0">Share of shift time spent at rising or act-now risk. Orange = above the crew average.</p>
     </article>
     <article class="card">
-      <div class="card-head"><h2>Alerts vs. interventions, by hour</h2><span class="hint">This shift</span></div>
+      <div class="card-head"><h2 id="chart-title">Alerts vs. interventions, by hour</h2><span class="hint" id="chart-hint">This shift</span></div>
       <div id="by-hour"></div>
       <div class="chart-legend"><span><i style="background:var(--coral)"></i>Heat &amp; SOS alerts</span><span><i style="background:var(--navy)"></i>Water runs &amp; shade breaks</span></div>
     </article>
   </section>
 
-  <footer class="rs-foot">Resilia hackathon prototype · insights are calculated live from the simulated shift · not field data</footer>
+  <footer class="rs-foot">Resilia hackathon prototype · “Past 30 days” is simulated history; “Today (live)” is calculated from the running simulation · not field data</footer>
 </main>
 
 <script src="/assets/resilia.js"></script>
@@ -119,18 +134,34 @@
 (function () {
   const R = window.Resilia;
   const { esc } = R;
+  // Two views: "30d" = simulated 30-day history (default), "today" = this live shift.
+  let range = "30d";
+  const data = { "30d": null, today: null };
+  let historyStatus = null;          // progress message while the history is being built
+  let lastFetch = { "30d": 0, today: 0 };
   let ins = null;
-  let lastFetch = 0;
 
-  async function fetchInsights() {
-    if (Date.now() - lastFetch < 2500) return;   // every few seconds is plenty
-    lastFetch = Date.now();
+  async function fetchInsights(force = false) {
+    // The history doesn't change: fetch it once (retry every few seconds until ready).
+    if (range === "30d" && data["30d"] && !force) return;
+    const wait = range === "30d" ? 5000 : 2500;
+    if (!force && Date.now() - lastFetch[range] < wait) return;
+    lastFetch[range] = Date.now();
     try {
-      const res = await fetch("/api/insights", { cache: "no-store" });
-      if (res.ok) ins = await res.json();
+      const res = await fetch(range === "30d" ? "/api/insights?range=30d" : "/api/insights", { cache: "no-store" });
+      const body = await res.json();
+      if (res.ok) { data[range] = body; if (range === "30d") historyStatus = null; }
+      else if (range === "30d") historyStatus = body;
     } catch {}
     render();
   }
+
+  document.querySelectorAll(".range-switch button").forEach((b) => b.addEventListener("click", () => {
+    range = b.dataset.range;
+    document.querySelectorAll(".range-switch button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    render();
+    fetchInsights(true);
+  }));
 
   const level = (share) => (share < 0.05 ? 0 : share < 0.15 ? 1 : share < 0.3 ? 2 : share < 0.5 ? 3 : 4);
   const pct = (x) => `${Math.round(x * 100)}%`;
@@ -149,12 +180,23 @@
   }
 
   function render() {
-    if (!ins) return;
+    const hist = range === "30d";
+    ins = data[range];
+    document.getElementById("sim-badge").hidden = !hist;
+    if (!ins) {
+      const p = historyStatus && historyStatus.progress;
+      document.getElementById("headline").textContent = hist
+        ? (p && p.days ? `Building the simulated 30-day history… (${p.day} of ${p.days} days)`
+                       : "The simulated 30-day history isn't ready yet. Start the demo with run_all.py to build it.")
+        : "Collecting today's data…";
+      return;
+    }
     const sel = R.state.site;
     const hm = ins.heatmap || {};
     const sites = R.SITES.filter((s) => hm[s]);
     const minCell = ins.min_minutes_per_cell || 20;
-    const nowHour = ins.last_sim ? Number(ins.last_sim.slice(11, 13)) : null;
+    const nowHour = !hist && ins.last_sim ? Number(ins.last_sim.slice(11, 13)) : null;   // outline the current hour (live only)
+    const fmtDate = (d) => new Date(d + "T12:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 
     // ---------- heat-map
     let html = `<div></div>${ins.hours.map((h) => `<div class="hh">${String(h).padStart(2, "0")}</div>`).join("")}`;
@@ -175,10 +217,12 @@
       }
     }
     R.setHTML(document.getElementById("heatmap"), html);
-    const span = ins.first_sim ? `${R.hhmm(ins.first_sim)}–${R.hhmm(ins.last_sim)}` : "";
-    document.getElementById("hm-note").textContent =
-      `Data so far: ${span} (simulated time). Cells fill in as the shift goes on; the outlined column is the current hour.` +
-      (R.state.speed > 1 ? ` At ${R.state.speed}× demo speed, one hour takes about ${Math.round(60 / R.state.speed)} real minutes.` : "");
+    const span = hist ? `${fmtDate(ins.from)} – ${fmtDate(ins.to)}`
+      : ins.first_sim ? `${R.hhmm(ins.first_sim)}–${R.hhmm(ins.last_sim)}` : "";
+    document.getElementById("hm-note").textContent = hist
+      ? `Simulated history: average of ${ins.days} simulated summer days (${span}), shifts 06:00–18:00.`
+      : `Data so far: ${span} (simulated time). Cells fill in as the shift goes on; the outlined column is the current hour.` +
+        (R.state.speed > 1 ? ` At ${R.state.speed}× demo speed, one hour takes about ${Math.round(60 / R.state.speed)} real minutes.` : "");
 
     // ---------- risk by job (selected site or all)
     const jobAgg = {};
@@ -198,28 +242,40 @@
       <span class="bar" title="${esc(j.job)}: ${pct(j.share)} of shift time at risk"><i class="${j.share > avg ? "hi" : ""}" style="width:${(j.share / maxShare) * 100}%"></i></span>
       <span class="pct">${pct(j.share)}</span>`).join("") : '<span class="empty" style="grid-column:1/-1">No data yet.</span>');
 
-    // ---------- alerts vs interventions by hour
-    const bh = ins.by_hour || {};
-    const hrs = Object.keys(bh).map(Number).sort((a, b) => a - b);
+    // ---------- alerts vs interventions: by WEEK (30-day history) or by HOUR (today)
+    let groups = [];
+    if (hist) {
+      groups = (ins.by_week || []).map((w) => ({ label: w.label, title: `${w.label} (${w.days} day${w.days === 1 ? "" : "s"})`, alerts: w.alerts, interventions: w.interventions }));
+    } else {
+      const bh = ins.by_hour || {};
+      const hrs = Object.keys(bh).map(Number).sort((a, b) => a - b);
+      if (hrs.length) for (let h = hrs[0]; h <= hrs[hrs.length - 1]; h++) {
+        const d = bh[h] || { alerts: 0, interventions: 0 };
+        groups.push({ label: `${String(h).padStart(2, "0")}:00`, title: `${h}:00`, alerts: d.alerts, interventions: d.interventions });
+      }
+    }
+    document.getElementById("chart-title").textContent = `Alerts vs. interventions, by ${hist ? "week" : "hour"}`;
+    document.getElementById("chart-hint").textContent = hist ? "Simulated history" : "This shift";
     let chart = '<p class="empty">No alerts or interventions yet.</p>';
-    if (hrs.length) {
-      const all = []; for (let h = hrs[0]; h <= hrs[hrs.length - 1]; h++) all.push(h);
-      const max = Math.max(1, ...all.map((h) => Math.max((bh[h] || {}).alerts || 0, (bh[h] || {}).interventions || 0)));
-      const W = 600, H = 230, base = 200, gw = W / all.length, bw = Math.min(26, gw * 0.3);
+    if (groups.length) {
+      const max = Math.max(1, ...groups.map((g) => Math.max(g.alerts, g.interventions)));
+      const W = 600, H = 230, base = 200, gw = W / groups.length, bw = Math.min(30, gw * 0.3);
       const y = (v) => base - (v / max) * 170;
-      chart = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Alerts and interventions per hour">
+      chart = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Alerts and interventions per ${hist ? "week" : "hour"}">
         <line x1="0" x2="${W}" y1="${base}" y2="${base}" stroke="#d9cdb9"/>
-        ${all.map((h, i) => {
-          const d = bh[h] || { alerts: 0, interventions: 0 };
+        ${groups.map((g, i) => {
           const cx = gw * i + gw / 2;
           return `<g>
-            <rect x="${cx - bw - 2}" y="${y(d.alerts)}" width="${bw}" height="${base - y(d.alerts)}" rx="4" fill="#ee5a4b"><title>${h}:00 · ${d.alerts} alerts</title></rect>
-            <rect x="${cx + 2}" y="${y(d.interventions)}" width="${bw}" height="${base - y(d.interventions)}" rx="4" fill="#10283a"><title>${h}:00 · ${d.interventions} interventions</title></rect>
-            <text x="${cx}" y="${base + 20}" text-anchor="middle" font-size="13" fill="#4d5b66">${String(h).padStart(2, "0")}:00</text>
-            ${d.alerts ? `<text x="${cx - bw / 2 - 2}" y="${y(d.alerts) - 6}" text-anchor="middle" font-size="12" fill="#4d5b66">${d.alerts}</text>` : ""}
-            ${d.interventions ? `<text x="${cx + bw / 2 + 2}" y="${y(d.interventions) - 6}" text-anchor="middle" font-size="12" fill="#4d5b66">${d.interventions}</text>` : ""}
+            <rect x="${cx - bw - 2}" y="${y(g.alerts)}" width="${bw}" height="${base - y(g.alerts)}" rx="4" fill="#ee5a4b"><title>${esc(g.title)} · ${g.alerts} alerts</title></rect>
+            <rect x="${cx + 2}" y="${y(g.interventions)}" width="${bw}" height="${base - y(g.interventions)}" rx="4" fill="#10283a"><title>${esc(g.title)} · ${g.interventions} interventions</title></rect>
+            <text x="${cx}" y="${base + 20}" text-anchor="middle" font-size="13" fill="#4d5b66">${esc(g.label)}</text>
+            ${g.alerts ? `<text x="${cx - bw / 2 - 2}" y="${y(g.alerts) - 6}" text-anchor="middle" font-size="12" fill="#4d5b66">${g.alerts}</text>` : ""}
+            ${g.interventions ? `<text x="${cx + bw / 2 + 2}" y="${y(g.interventions) - 6}" text-anchor="middle" font-size="12" fill="#4d5b66">${g.interventions}</text>` : ""}
           </g>`;
         }).join("")}</svg>`;
+      if (hist && groups.length && (ins.by_week || []).slice(-1)[0].days < 7) {
+        chart += `<p class="hint" style="margin:4px 0 0">The last week has only ${(ins.by_week || []).slice(-1)[0].days} days so far.</p>`;
+      }
     }
     R.setHTML(document.getElementById("by-hour"), chart);
 
@@ -229,8 +285,14 @@
     R.setHTML(document.getElementById("k-lead"), k.median_warning_minutes == null ? "–" : `${k.median_warning_minutes}<small>min</small>`);
     R.tween(document.getElementById("k-int"), k.interventions || 0);
     R.setHTML(document.getElementById("k-caught"), k.caught_early_pct == null ? "–" : `${k.caught_early_pct}<small>%</small>`);
-    document.getElementById("k-caught-sub").textContent = k.early_warnings
-      ? `of ${k.early_warnings} AI warnings never reached the danger zone` : "of AI warnings never reached the danger zone";
+    const n = (x) => Number(x || 0).toLocaleString("en-GB");
+    const perDay = (x) => (hist && ins.days ? ` · ≈${n(Math.round((x || 0) / ins.days))} a day` : "");
+    document.querySelector("#k-warn + .kpi-sub").textContent = `AI forecasts before the danger zone${perDay(k.early_warnings)}`;
+    document.querySelector("#k-int + .kpi-sub").textContent = `water runs & shade breaks${perDay(k.interventions)}`;
+    // Be upfront: danger-zone alerts that came with no earlier warning.
+    document.getElementById("k-caught-sub").textContent =
+      (k.early_warnings ? `of ${n(k.early_warnings)} AI warnings never reached the danger zone` : "of AI warnings never reached the danger zone") +
+      (k.unwarned_danger ? ` · ${n(k.unwarned_danger)} danger-zone alerts came with no warning` : "");
 
     // ---------- recommendations
     R.setHTML(document.getElementById("recs"), (ins.recommendations || []).map((r) =>
@@ -241,16 +303,22 @@
     const top = peak.length ? peak.filter(([, s]) => s >= peak[0][1] * 0.75).map(([h]) => String(h).padStart(2, "0")).sort() : [];
     document.getElementById("headline").textContent =
       headline(top, peak.length, jobs[0] && jobs[0].share > avg * 1.2 ? jobs[0].job : null);
-    R.setHTML(document.getElementById("eyebrow"),
-      `For site managers, employers &amp; regulators · ${R.state.speed > 1 ? "demo" : "simulated"} shift ${esc(span)}` +
-      (R.statusWarn ? ` · <span class="warn">${esc(R.statusText)}</span>` : ""));
+    R.setHTML(document.getElementById("eyebrow"), hist
+      ? `For site managers, employers &amp; regulators · simulated history · ${ins.days} days, ${esc(span)}`
+      : `For site managers, employers &amp; regulators · today (live) · ${R.state.speed > 1 ? "demo" : "simulated"} shift ${esc(span)}` +
+        (R.statusWarn ? ` · <span class="warn">${esc(R.statusText)}</span>` : ""));
+    document.getElementById("recs-note").textContent = hist
+      ? `Worked out from ${ins.days} days of simulated history: illustrative, not field data.`
+      : "Worked out from this shift's simulated helmets: illustrative, not field data.";
   }
 
   document.getElementById("copy-brief").addEventListener("click", async () => {
     if (!ins) return;
     const k = ins.kpis || {};
     const text = [
-      `Resilia shift brief (${R.hhmm(ins.first_sim)}–${R.hhmm(ins.last_sim)}, simulated data)`,
+      range === "30d"
+        ? `Resilia brief: past ${ins.days} days (${ins.from} to ${ins.to}). SIMULATED HISTORY, not field data.`
+        : `Resilia shift brief (${R.hhmm(ins.first_sim)}–${R.hhmm(ins.last_sim)}, simulated data)`,
       document.getElementById("headline").textContent,
       "",
       `Early warnings issued: ${k.early_warnings ?? 0} · median warning time: ${k.median_warning_minutes ?? "–"} min`,

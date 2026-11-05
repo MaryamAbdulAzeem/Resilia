@@ -39,6 +39,10 @@ ALERTS_FILE = Path("data") / "alerts.jsonl"
 # An alert stays open until the worker has been calm (not RED, not predicted RED)
 # for this long. Stops one worker flickering RED/YELLOW from raising many alerts.
 CLEAR_AFTER_SIM_SECONDS = 120
+# After a predicted alert clears, don't raise another PREDICTED alert for the
+# same worker for this long (RED and SOS alerts are never held back). Stops a
+# worker hovering at the forecast threshold from triggering alert after alert.
+PREDICTED_COOLDOWN_SIM_SECONDS = 15 * 60
 
 # How many recent readings to average per worker.
 # 12 readings x 5 seconds = the last 1 minute. Averaging smooths out sensor noise.
@@ -360,7 +364,10 @@ def crew_status(r):
         return "act"
     if r["level"] == "RED" or (f and f["level"] == "RED"):
         return "act"
-    if f or r["hr_points"] + r["skin_points"] > 0:
+    # Rising = real body signs of strain. (A forecast of merely reaching YELLOW
+    # doesn't count: on a hot morning almost everyone gets one, which made the
+    # cool hours look riskier than midday.)
+    if r["hr_points"] + r["skin_points"] > 0:
         return "rising"
     return "steady"
 
@@ -523,6 +530,7 @@ class AlertManager:
         self.active = {}      # worker_id -> open heat alert
         self.calm_since = {}  # worker_id -> when they stopped being at risk
         self.sos = {}         # worker_id -> open SOS (help request from the helmet button)
+        self.last_cleared = {}  # worker_id -> when their last alert cleared (for the cooldown)
 
     def update_sos(self, r, now):
         """Open an SOS alert when a helmet starts signalling, close it when it stops."""
@@ -556,7 +564,13 @@ class AlertManager:
         r["sos_alert"] = alert
 
     def update(self, results, speed, sim_time=None):
-        now = time.time()
+        # Time an alert has been calm is measured on the simulated clock when we
+        # have one (so it also works when replaying history much faster than
+        # real time). Without one, fall back to real seconds x demo speed.
+        if sim_time:
+            now, factor = datetime.fromisoformat(sim_time).timestamp(), 1
+        else:
+            now, factor = time.time(), speed
         self.sim_time = sim_time
         for r in results:
             wid = r["worker_id"]
@@ -570,6 +584,9 @@ class AlertManager:
                 kind = None
 
             alert = self.active.get(wid)
+            if kind == "predicted_red" and alert is None and \
+                    (now - self.last_cleared.get(wid, float("-inf"))) * factor < PREDICTED_COOLDOWN_SIM_SECONDS:
+                kind = None   # cooling down after a recent predicted alert
             if kind:
                 self.calm_since.pop(wid, None)
                 if alert is None:
@@ -599,7 +616,8 @@ class AlertManager:
                 alert["probability"] = forecast["probability"] if forecast else None
             elif alert is not None:
                 since = self.calm_since.setdefault(wid, now)
-                if (now - since) * speed >= CLEAR_AFTER_SIM_SECONDS:
+                if (now - since) * factor >= CLEAR_AFTER_SIM_SECONDS:
+                    self.last_cleared[wid] = now
                     self._log("alert_cleared", alert, f"{wid} is back to {r['level']}")
                     del self.active[wid]
                     del self.calm_since[wid]

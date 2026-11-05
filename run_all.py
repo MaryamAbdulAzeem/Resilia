@@ -18,6 +18,7 @@ Press Ctrl+C here to stop all of them.
 """
 
 import argparse
+import json
 import re
 import shutil
 import subprocess
@@ -53,6 +54,15 @@ def find_cloudflared():
     if found:
         return found
     return next((p for p in CLOUDFLARED_PATHS if Path(p).exists()), None)
+
+
+def history_needed():
+    """True if the simulated 30-day history (for Insights) is missing or out of date."""
+    from generate_history import OUT_FILE, VERSION
+    try:
+        return json.loads((BASE_DIR / OUT_FILE).read_text(encoding="utf-8")).get("version") != VERSION
+    except (OSError, ValueError):
+        return True
 
 
 def start_program(name, command, log_name):
@@ -143,6 +153,7 @@ def main():
 
     running = []
     tunnel = None
+    history = None   # background history builder (optional)
     try:
         for name, command in programs:
             log_name = command[0].replace(".py", ".log")
@@ -153,6 +164,14 @@ def main():
 
         print("\nOpen http://localhost:8000 in your browser (full control on this laptop).")
         print("The first scores appear after about 5 seconds. Press Ctrl+C to stop everything.")
+
+        # Insights' "Past 30 days" view uses a simulated history (models/history_30d.json,
+        # included in the project). Rebuild it in the background only if it's missing
+        # or out of date; the demo doesn't wait for it.
+        if history_needed():
+            history = start_program("30-day history", [sys.executable, "-u", "generate_history.py"], "history.log")
+            print("\nBuilding the simulated 30-day history for Insights in the background "
+                  "(about 3 minutes, one time only). Logs: data/logs/history.log")
 
         restarts_left = TUNNEL_RESTARTS
         if args.share:
@@ -187,7 +206,7 @@ def main():
     except KeyboardInterrupt:
         print("\nStopping...")
     finally:
-        for program in running + ([tunnel] if tunnel else []):
+        for program in running + ([tunnel] if tunnel else []) + ([history] if history else []):
             stop(program)
         SHARE_URL_FILE.unlink(missing_ok=True)
         print("All stopped.")

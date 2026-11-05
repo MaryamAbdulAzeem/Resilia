@@ -64,16 +64,18 @@
   };
 
   // Count numbers up/down smoothly instead of jumping.
+  // Whole numbers get thousands separators (7,153); decimals keep their places.
+  const fmtNum = (v, decimals) => (decimals === 0 ? Math.round(v).toLocaleString("en-GB") : Number(v).toFixed(decimals));
   R.tween = (el, to, decimals = 0) => {
     if (!el) return;
     const from = parseFloat(el.dataset.v);
     el.dataset.v = to;
-    if (REDUCE_MOTION || isNaN(from) || from === to) { el.textContent = Number(to).toFixed(decimals); return; }
+    if (REDUCE_MOTION || isNaN(from) || from === to) { el.textContent = fmtNum(to, decimals); return; }
     cancelAnimationFrame(el._raf);
     const start = performance.now();
     const step = (now) => {
       const k = Math.max(0, Math.min(1, (now - start) / 600));  // clamp: frames can be stamped early
-      el.textContent = (from + (to - from) * (1 - Math.pow(1 - k, 3))).toFixed(decimals);
+      el.textContent = fmtNum(from + (to - from) * (1 - Math.pow(1 - k, 3)), decimals);
       if (k < 1) el._raf = requestAnimationFrame(step);
     };
     el._raf = requestAnimationFrame(step);
