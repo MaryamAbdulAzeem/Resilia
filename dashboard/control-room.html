@@ -25,7 +25,13 @@
     background: radial-gradient(circle at 40% 35%, #ff8a75, var(--coral) 60%, #d9412f);
     box-shadow: 0 0 0 0 rgba(238, 90, 75, .5); animation: sos-pulse 1.6s ease-out infinite;
   }
-  .sos.responding .sos-badge { animation: none; }
+  /* Responding: someone is on it, so calmer (sun-gold, no pulse). Resolved: sage. */
+  .sos.responding { border-color: var(--sun); box-shadow: 0 0 0 6px rgba(245, 165, 60, 0.10), var(--shadow); }
+  .sos.responding .sos-badge { animation: none; background: radial-gradient(circle at 40% 35%, #ffd18a, var(--sun) 60%, var(--sun-deep)); color: var(--navy); }
+  .sos.responding .sos-kicker { color: var(--gold-text); }
+  .sos.resolved { border-color: var(--sage); box-shadow: var(--shadow); }
+  .sos.resolved .sos-badge { animation: none; background: var(--sage); }
+  .sos.resolved .sos-kicker { color: var(--sage-text); }
   .sos-kicker { color: var(--coral-text); font-weight: 700; font-size: 14px; letter-spacing: .02em; text-transform: uppercase; }
   .sos h2 { font-size: clamp(22px, 2.4vw, 30px); font-weight: 600; margin: 2px 0 4px; }
   .sos p { margin: 0; color: var(--text-2); }
@@ -55,6 +61,10 @@
 
   .fa { display: grid; grid-template-columns: auto 1fr; gap: 22px 34px; padding: 30px 34px; border-color: rgba(238, 90, 75, .35); }
   .fa.clear { border-color: var(--line); }
+  .fa.responding { border-color: rgba(245, 165, 60, .55); }
+  .fa.resolved { border-color: rgba(111, 163, 123, .55); }
+  .fa-ring.responding { background: radial-gradient(circle, #f5b65a 0 52%, #f9d29a 53% 100%); box-shadow: 0 10px 30px rgba(245, 165, 60, 0.22); }
+  .fa-ring.resolved { background: radial-gradient(circle, #9ccaa5 0 52%, #c9e2cd 53% 100%); box-shadow: none; }
   @media (max-width: 700px) { .fa { grid-template-columns: 1fr; padding: 22px; } }
   .fa-ring {
     width: 168px; height: 168px; border-radius: 50%; display: grid; place-content: center; text-align: center;
@@ -249,36 +259,42 @@
   // ---------------------------------------------------------------- SOS
   function renderSOS() {
     const box = document.getElementById("sos");
-    const sos = R.alerts().filter((a) => a.kind === "sos").filter((a) => R.state.site === "all" || a.site === R.state.site);
-    if (!sos.length) { box.hidden = true; R.setHTML(box, ""); return; }
+    const here = (a) => a.kind === "sos" && (R.state.site === "all" || a.site === R.state.site);
+    const sos = R.alerts().filter(here);
+    const resolved = R.resolvedAlerts().filter(here);
+    if (!sos.length && !resolved.length) { box.hidden = true; R.setHTML(box, ""); return; }
     if (box.hidden) {  // newly appearing: fade in once
       box.classList.add("appearing");
       setTimeout(() => box.classList.remove("appearing"), 400);
     }
-    const a = sos.find((x) => !R.isHandled(x)) || sos[0];
-    const handled = R.handledAction(a);
+    // Unanswered help calls first, then ones being handled, then a just-resolved one.
+    const a = sos.find((x) => R.alertState(x).state === "open") || sos[0] || resolved[resolved.length - 1];
+    const st = R.alertState(a);
     const secs = R.secondsSince(a.started_at);
     const still = a.motionless_s ? `no movement for ${a.motionless_s} s` : "moving";
-    const kicker = handled
-      ? `Responding · ${esc(handled.label)} at ${R.entryTime(handled)} · helmet still signalling`
+    const kicker = st.state === "resolved" ? `SOS resolved ✓ · help arrived at ${hhmm(a.resolved_sim)}`
+      : st.state === "responding" ? `Responding · ${esc(st.summary)} · helmet still signalling`
       : `Help requested · ${R.ago(secs)}`;
     box.hidden = false;
-    box.classList.toggle("responding", !!handled);
+    box.classList.toggle("responding", st.state === "responding");
+    box.classList.toggle("resolved", st.state === "resolved");
+    const others = sos.filter((x) => x !== a);
     R.setHTML(box, `
-      <div class="sos-badge" aria-hidden="true">SOS</div>
+      <div class="sos-badge" aria-hidden="true">${st.state === "resolved" ? "✓" : "SOS"}</div>
       <div>
         <div class="sos-kicker">${kicker}</div>
-        <h2>${esc(a.worker_id)} held the helmet button</h2>
-        <p>${esc(crewLabel(a.job))} · ${esc(a.site)}, Zone ${esc(a.zone || "?")} · last vitals: ${a.heart_rate_bpm} bpm, forehead ${Number(a.skin_temp_c).toFixed(1)} °C, ${still}</p>
+        <h2>${esc(a.worker_id)} ${st.state === "resolved" ? "is being looked after" : "held the helmet button"}</h2>
+        <p>${esc(crewLabel(a.job))} · ${esc(a.site)}, Zone ${esc(a.zone || "?")}${st.state === "resolved" ? " · the helmet stopped signalling" : ` · last vitals: ${a.heart_rate_bpm} bpm, forehead ${Number(a.skin_temp_c).toFixed(1)} °C, ${still}`}</p>
       </div>
       <div class="sos-actions">
-        ${R.actionButton("on_my_way", a.worker_id, a.alert_id, "btn btn-primary")}
-        ${R.actionButton("send_first_aider", a.worker_id, a.alert_id, "btn btn-outline")}
-        ${R.actionButton("call_999", a.worker_id, a.alert_id, "btn btn-danger")}
+        ${st.state === "resolved" ? "" : `
+          ${R.actionButton("on_my_way", a.worker_id, a.alert_id, "btn btn-primary")}
+          ${R.actionButton("send_first_aider", a.worker_id, a.alert_id, "btn btn-outline")}
+          ${R.actionButton("call_999", a.worker_id, a.alert_id, "btn btn-danger")}`}
         ${R.state.viewOnly ? '<span class="hint">View-only link: the supervisor responds from the control room.</span>' : ""}
-        ${!R.audioRunning() && !handled ? '<span class="hint">🔇 Tap anywhere on the page to allow the SOS alarm sound.</span>' : ""}
+        ${!R.audioRunning() && st.state === "open" ? '<span class="hint">🔇 Tap anywhere on the page to allow the SOS alarm sound.</span>' : ""}
       </div>
-      ${sos.length > 1 ? `<div class="sos-more">+ ${sos.length - 1} more help request${sos.length > 2 ? "s" : ""}: ${sos.filter((x) => x !== a).map((x) => esc(x.worker_id)).join(", ")}</div>` : ""}`);
+      ${others.length ? `<div class="sos-more">+ ${others.length} more help request${others.length > 1 ? "s" : ""}: ${others.map((x) => esc(x.worker_id)).join(", ")}</div>` : ""}`);
   }
 
   // ------------------------------------------------------ headline + KPIs
@@ -328,15 +344,14 @@
   }
 
   // ------------------------------------------------------- featured alert
+  // Heat alerts for the big card: Open ones first, then Responding, then any
+  // resolved in the last minute (so you see it turn "Resolved ✓").
+  const STATE_RANK = { open: 0, responding: 10, resolved: 20 };
   function candidateAlerts() {
-    const rank = (a) => (R.isHandled(a) ? 10 : 0) + (a.kind === "red" ? 0 : 1);
-    const statusOf = {};
-    (R.state.scores.workers || []).forEach((w) => { statusOf[w.worker_id] = w.status; });
-    return R.alerts()
-      // An alert stays open for a while after the worker calms down (so a flicker
-      // doesn't re-alert). Only feature workers who are still at risk: Act now, or
-      // Rising (e.g. the AI predicts danger, but not yet with 70%+ confidence).
-      .filter((a) => statusOf[a.worker_id] === "act" || statusOf[a.worker_id] === "rising")
+    const rank = (a) => STATE_RANK[R.alertState(a).state] + (a.kind === "red" ? 0 : 1);
+    // A worker can have a resolved alert and a new open one: show only the newer.
+    const live = new Set(R.alerts().map((a) => a.worker_id));
+    return [...R.alerts(), ...R.resolvedAlerts().filter((a) => !live.has(a.worker_id))]
       .filter((a) => a.kind !== "sos" && (R.state.site === "all" || a.site === R.state.site))
       .sort((a, b) => rank(a) - rank(b) || (a.minutes ?? 0) - (b.minutes ?? 0) || a.worker_id.localeCompare(b.worker_id));
   }
@@ -355,8 +370,10 @@
     let text = parts.join(" ");
     if (w.skin_points) text += `, and forehead temperature is ${w.avg_skin_temp_c.toFixed(1)} °C`;
     text += ".";
-    if (alert.kind === "red") text += " This worker is in the danger zone now: get them into shade, cool them down and check on them.";
-    else text += ` Without a break, Resilia expects this worker to reach the danger zone in about ${alert.minutes} minutes.`;
+    if (w.status === "steady") text += " Readings are settling back to steady: the alert resolves after 5 steady minutes.";
+    else if (alert.kind === "red") text += " This worker is in the danger zone now: get them into shade, cool them down and check on them.";
+    else if (alert.minutes) text += ` Without a break, Resilia expects this worker to reach the danger zone in about ${alert.minutes} minutes.`;
+    else text += " Resilia keeps watching until the readings are back to steady.";
     return text;
   }
 
@@ -371,6 +388,7 @@
 
     if (!alert) {
       box.classList.add("clear");
+      box.classList.remove("responding", "resolved");
       R.setHTML(box, `
         <div class="fa-ring clear"><div class="fa-num">✓</div><div class="fa-unit">clear</div></div>
         <div>
@@ -380,37 +398,52 @@
         </div>`);
       return;
     }
-    box.classList.remove("clear");
     const w = workers.find((x) => x.worker_id === alert.worker_id);
     if (!w) return;
     const red = alert.kind === "red";
-    const handled = R.handledAction(alert);
-    const conf = alert.probability != null ? `AI confidence ${Math.round(alert.probability * 100)}% · ` : "";
-    const ring = red
-      ? `<div class="fa-ring now"><div class="fa-num">NOW</div><div class="fa-unit">danger zone</div></div>`
-      : `<div class="fa-ring"><div class="fa-num">${alert.minutes ?? "?"}</div><div class="fa-unit">min${R.state.speed > 1 && alert.minutes ? ` (≈${Math.round(alert.minutes * 60 / R.state.speed)} s)` : ""}</div></div>`;
-    const others = list.filter((a) => a !== alert && !R.isHandled(a));
+    const st = R.alertState(alert);
+    box.classList.remove("clear");
+    box.classList.toggle("responding", st.state === "responding");
+    box.classList.toggle("resolved", st.state === "resolved");
+    const first = st.by;
+    const conf = alert.probability != null && !red && st.state !== "resolved" ? `AI confidence ${Math.round(alert.probability * 100)}% · ` : "";
+    // Open: coral (pulsing while in the danger zone). Responding: calmer gold. Resolved: sage tick.
+    const inDanger = w.level === "RED";
+    const ringCls = st.state === "resolved" ? "resolved" : st.state === "responding" ? "responding" : red && inDanger ? "now" : "";
+    const ring = st.state === "resolved"
+      ? `<div class="fa-ring resolved"><div class="fa-num">✓</div><div class="fa-unit">resolved</div></div>`
+      : red && inDanger ? `<div class="fa-ring ${ringCls}"><div class="fa-num">NOW</div><div class="fa-unit">danger zone</div></div>`
+      : red ? `<div class="fa-ring ${ringCls}"><div class="fa-num">!</div><div class="fa-unit">${st.state === "open" ? "no response yet" : "recovering"}</div></div>`
+      : `<div class="fa-ring ${ringCls}"><div class="fa-num">${alert.minutes ?? "–"}</div><div class="fa-unit">${alert.minutes ? `min${R.state.speed > 1 ? ` (≈${Math.round(alert.minutes * 60 / R.state.speed)} s)` : ""}` : "recovering"}</div></div>`;
+    const others = list.filter((a) => a !== alert && R.alertState(a).state === "open");
+    const text = st.state === "resolved"
+      ? `${w.worker_id}'s readings have been steady for 5 minutes (heart rate ${w.avg_heart_rate_bpm} bpm, forehead ${w.avg_skin_temp_c.toFixed(1)} °C). Alert resolved at ${hhmm(alert.resolved_sim)} and logged.`
+      : explain(w, alert);
     R.setHTML(box, `
       ${ring}
       <div>
         <div class="fa-meta">
-          <span class="tag tag-act">▲ ${red ? "Heat stress now" : "Predicted heat stress"}</span>
+          ${R.stateTagHTML(st)}
+          <span class="tag ${st.state === "resolved" ? "tag-steady" : "tag-act"}">${red ? "▲ Heat stress" : "↗ Predicted heat stress"}</span>
           <span>${conf}updated ${R.ago(R.secondsSince(R.state.scores.generated_at))}</span>
         </div>
         <h2>${esc(w.worker_id)} · ${esc(crewLabel(w.job))}, ${esc(w.site)}</h2>
-        <p>${esc(explain(w, alert))}</p>
-        <div class="fa-metrics">
+        <p>${esc(text)}</p>
+        ${st.state === "resolved" ? "" : `<div class="fa-metrics">
           <div class="metric"><div class="k">Heart rate</div><div class="v">${w.avg_heart_rate_bpm} <small>bpm${arrow(w.hr_change_5m, 3)}</small></div></div>
           <div class="metric"><div class="k">Skin temp</div><div class="v">${w.avg_skin_temp_c.toFixed(1)} <small>°C${arrow(w.skin_change_5m, 0.2)}</small></div></div>
           <div class="metric"><div class="k">Site WBGT</div><div class="v">${w.wbgt_c.toFixed(1)} <small>°C</small></div></div>
-        </div>
-        <div class="fa-actions">
-          ${R.actionButton("dispatch_water", w.worker_id, alert.alert_id, "btn btn-primary")}
-          ${R.actionButton("shade_break", w.worker_id, alert.alert_id, "btn btn-outline")}
-          ${R.buzzSentTo(w) ? R.actionButton("buzz", w.worker_id, alert.alert_id, "btn btn-text") : ""}
+        </div>`}
+        ${st.responses.length ? `<div class="hint">What's been done</div>${R.responsesHTML(st)}` : ""}
+        <div class="fa-actions" style="margin-top:16px">
+          ${st.state === "resolved" ? "" : `
+            ${R.actionButton("dispatch_water", w.worker_id, alert.alert_id, "btn btn-primary")}
+            ${R.actionButton("shade_break", w.worker_id, alert.alert_id, "btn btn-outline")}
+            ${R.buzzSentTo(w) ? R.actionButton("buzz", w.worker_id, alert.alert_id, "btn btn-text") : ""}`}
           <button type="button" class="btn btn-text" data-locate="${esc(w.worker_id)}" data-key="loc-${esc(w.worker_id)}">Show location · Zone ${esc(w.zone || "?")}</button>
         </div>
-        ${handled ? `<div class="fa-handled">✓ ${esc(R.entryLabel(handled))} at ${R.entryTime(handled)}${R.responseSeconds(handled) != null ? ` · ${R.responseSeconds(handled)} s after the alert` : ""}. Resilia keeps watching${R.byAgent(handled) ? ' · <a href="/ai-agent.html">see what the agent did</a>' : ""}.</div>` : ""}
+        ${first && st.state === "responding" ? `<div class="fa-handled">First response ${R.entryTime(first)}${R.responseSeconds(first) != null ? ` · ${R.responseSeconds(first)} s after the alert` : ""}. The alert resolves once ${esc(w.worker_id)} is back to steady${R.byAgent(first) ? ' · <a href="/ai-agent.html">see what the agent did</a>' : ""}.</div>` : ""}
+        ${st.state === "open" && red ? `<div class="fa-handled">${esc(w.worker_id)} reached the danger zone at ${hhmm(alert.started_sim)}. ${st.responses.length ? "The AI agent has acted, but the" : "The"} danger zone needs a person: any action above moves this alert to Responding.</div>` : ""}
         ${R.state.viewOnly ? '<div class="fa-handled">View-only link: the supervisor responds from the control room.</div>' : ""}
         ${others.length ? `<div class="fa-others">Also needs attention:
           ${others.map((o) => `<button type="button" class="chip" data-pick="${esc(o.alert_id)}" data-key="pick-${esc(o.alert_id)}">${esc(o.worker_id)} · ${o.kind === "red" ? '<span class="st-act">▲ now</span>' : `<span class="st-act">↗ ~${o.minutes} min</span>`}</button>`).join("")}</div>` : ""}
@@ -522,7 +555,8 @@
     const resp = e.type === "action" ? R.responseSeconds(e) : null;
     switch (e.type) {
       case "sos": return ["d-act", `${esc(e.worker_id)} held the helmet button · help requested`];
-      case "sos_cleared": return ["d-steady", `${esc(e.worker_id)}'s helmet stopped signalling SOS`];
+      case "sos_cleared": return ["d-steady", `SOS resolved · ${esc(e.worker_id)}'s helmet stopped signalling`];
+      case "alert_resolved": return ["d-steady", `${esc(e.worker_id)} back to steady · alert resolved`];
       case "alert": return e.kind === "red"
         ? ["d-act", `${esc(e.worker_id)} reached the danger zone`]
         : ["d-rising", `AI predicted heat stress for ${esc(e.worker_id)}${/~(\d+) min/.test(e.message) ? ` in ~${e.message.match(/~(\d+) min/)[1]} min` : ""}`];
@@ -620,19 +654,27 @@
     }
   }
 
+  // Show location: one smooth scroll to the map, centre it on the worker and
+  // highlight their dot. The live refresh keeps going without moving the page
+  // (redraws never re-scroll: see R.setHTML).
+  let focusTimer = null;
   function locate(workerId) {
-    document.getElementById("map-card").scrollIntoView({ behavior: R.REDUCE_MOTION ? "auto" : "smooth", block: "center" });
+    const card = document.getElementById("map-card");
+    const top = card.getBoundingClientRect().top + window.scrollY - Math.max(16, (window.innerHeight - card.offsetHeight) / 2);
+    window.scrollTo({ top: Math.max(0, top), behavior: R.REDUCE_MOTION ? "auto" : "smooth" });
     const m = dots[workerId];
     if (!m) return;
+    map.panTo(m.getLatLng(), { animate: !R.REDUCE_MOTION, duration: 0.6 });
     Object.values(dots).forEach((d) => d.getElement()?.firstChild?.classList.remove("focus"));
     m.getElement()?.firstChild?.classList.add("focus");
     m.openTooltip();
-    setTimeout(() => m.getElement()?.firstChild?.classList.remove("focus"), 6000);
+    clearTimeout(focusTimer);
+    focusTimer = setTimeout(() => { m.getElement()?.firstChild?.classList.remove("focus"); m.closeTooltip(); }, 8000);
   }
 
   document.addEventListener("click", (e) => {
     const loc = e.target.closest("[data-locate]");
-    if (loc) locate(loc.dataset.locate);
+    if (loc) { loc.blur(); locate(loc.dataset.locate); }   // no focus left behind to pull the page back
     const pick = e.target.closest("[data-pick]");
     if (pick) { selectedAlertId = pick.dataset.pick; render(); }
   });

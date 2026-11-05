@@ -49,6 +49,8 @@ BREAK_GAP_MIN = 60       # at least this long between automatic breaks...
 BREAK_GAP_RED_MIN = 30   # ...or this long if the worker is in the danger zone
 BREAK_IF_WITHIN_MIN = 5  # predicted danger this close (or actual danger) also gets a shade break
 SLOW_DOWN_MIN = 10       # after a helmet buzz the worker sticks to light tasks this long
+DRINK_MIN = 2            # when water arrives the worker stops this long to drink
+SOS_HELP_MIN = 3         # after a supervisor responds to an SOS, help reaches the worker this fast
 WATER_MIN = 30           # how long a water run helps
 WATER_COOLDOWN_MIN = 150 # don't send the same worker water again within this time
 WATER_TRIP_MIN = 20      # a runner sent to a site in the last 20 min serves everyone there
@@ -73,8 +75,10 @@ class Agent:
         self.cases = {}               # case_id -> case
         self.open_case = {}           # worker_id -> open case_id
         self.proposals = []           # big steps waiting for (or decided by) a human
-        # breaks / water / slow (after a buzz) per worker; pauses per site. Read by the simulator.
-        self.controls = {"breaks": {}, "water": {}, "pauses": {}, "slow": {}}
+        # Read by the simulator. Per worker: breaks / water / slow (after a buzz) until a time;
+        # drink {from, until} when the water runner arrives; sos_help {arrive, until} once a
+        # supervisor responds to an SOS. Per site: pauses.
+        self.controls = {"breaks": {}, "water": {}, "pauses": {}, "slow": {}, "drink": {}, "sos_help": {}}
         self.trail = defaultdict(list)   # worker_id -> [(sim_dt, hr, skin, activity)], 1 per sim minute
         self.override_until = {}         # site -> sim time until which we won't ask again
         # Start after any actions already in the log (from earlier runs), so old
@@ -110,6 +114,7 @@ class Agent:
                 self._handle_alert(alert, w, now)
 
         self._check_outcomes(workers, now)
+        self._resolve_cases(alerts, workers, now)
         self._propose_crew_pauses(workers, sites, now)
         self._expire_proposals(now)
         self._write_controls(now)
@@ -200,11 +205,13 @@ class Agent:
             trip = self.site_trip.get(w["site"])
             if recently(trip, WATER_TRIP_MIN):
                 # One runner serves the whole site: join the run that's already on its way.
+                self._schedule_drink(wid, now, 2)
                 self._step(case, now, "act", "Added to the water run",
-                           f"Joins the runner already sent to {w['site']} at {hhmm(trip)}.", "water_join", aid)
+                           f"Joins the runner already sent to {w['site']} at {hhmm(trip)} · ETA 2 min.", "water_join", aid)
             else:
                 self.site_trip[w["site"]] = now
                 eta = ZONE_ETA.get(w.get("zone") or "B", 4)
+                self._schedule_drink(wid, now, eta)
                 self._step(case, now, "act", "Dispatched water",
                            f"Nearest runner assigned to Zone {w.get('zone') or '?'} · ETA {eta} min.", "water", aid)
         # A short break, but not back-to-back: at least 60 min between automatic
@@ -223,6 +230,37 @@ class Agent:
             except (KeyError, ValueError):
                 pass
         case["check_due"] = iso(now + timedelta(minutes=CHECK_AFTER_MIN))
+
+    def _schedule_drink(self, wid, now, eta_min):
+        """When the water arrives (after the ETA), the worker stops for a 2-minute drink."""
+        start = now + timedelta(minutes=eta_min)
+        self.controls["drink"][wid] = {"from": iso(start), "until": iso(start + timedelta(minutes=DRINK_MIN))}
+
+    def _resolve_cases(self, alerts, workers, now):
+        """Close a case once its alert has resolved (the worker is back to steady / help arrived)."""
+        open_ids = {a["alert_id"] for a in alerts}
+        for case in list(self.cases.values()):
+            if case["status"] != "open" or not case["alert_ids"]:
+                continue
+            if any(aid in open_ids for aid in case["alert_ids"]):
+                continue
+            w = workers.get(case["worker_id"])
+            if case["kind"] == "sos":
+                title, detail = "SOS resolved", "Help reached the worker and the helmet stopped signalling. Case closed."
+            else:
+                hr = f"heart rate {w['avg_heart_rate_bpm']} bpm, " if w else ""
+                title, detail = "Resolved: back to steady", f"Readings back to steady ({hr}normal skin temperature). Case closed."
+            self._step(case, now, "check", title, detail)
+            # A 999 request for this case isn't needed any more.
+            for p in self.proposals:
+                if p["status"] == "waiting" and p.get("case_id") == case["case_id"]:
+                    p["status"] = "expired"
+                    p["decided_sim"] = iso(now)
+            case["status"] = "closed"
+            case["closed_sim"] = iso(now)
+            start = datetime.fromisoformat(case["opened_sim"]) - timedelta(minutes=10)
+            case["trail"] = [[hhmm(t), hr_, skin, ] for t, hr_, skin, _ in self.trail[case["worker_id"]] if t >= start]
+            self.open_case.pop(case["worker_id"], None)
 
     def _handle_alert(self, alert, w, now):
         wid, aid, kind = w["worker_id"], alert["alert_id"], alert["kind"]
@@ -307,16 +345,13 @@ class Agent:
                            f"({w['avg_heart_rate_bpm']} bpm). Supervisor notified again; checking again in {CHECK_AFTER_MIN} min.")
                 case["check_due"] = iso(now + timedelta(minutes=CHECK_AFTER_MIN))
             else:
+                # Out of the danger window: note the progress. The case closes when
+                # the alert resolves (readings back to steady).
                 status = {"steady": "steady", "rising": "rising, but out of the danger window"}[w["status"]]
                 self._step(case, now, "check", "Checked the outcome",
-                           f"Heart rate {'back to' if w['avg_heart_rate_bpm'] < case['start_hr'] else 'at'} "
-                           f"{w['avg_heart_rate_bpm']} bpm, status {status}. Case closed.")
-                case["status"] = "closed"
-                case["closed_sim"] = iso(now)
-                # Keep the heart-rate trail around this case (for the home page chart).
-                start = datetime.fromisoformat(case["opened_sim"]) - timedelta(minutes=10)
-                case["trail"] = [[hhmm(t), hr, skin] for t, hr, skin, _ in self.trail[case["worker_id"]] if t >= start]
-                self.open_case.pop(case["worker_id"], None)
+                           f"Heart rate {'down to' if w['avg_heart_rate_bpm'] < case['start_hr'] else 'at'} "
+                           f"{w['avg_heart_rate_bpm']} bpm, status {status}. Waiting for readings to settle back to steady.")
+                case["check_due"] = None
 
     # ------------------------------------------------- asking a human first
     def _propose_crew_pauses(self, workers, sites, now):
@@ -413,6 +448,13 @@ class Agent:
                 self.controls["breaks"][wid] = iso(now + timedelta(minutes=BREAK_MIN))
             elif e.get("action") == "dispatch_water" and wid:
                 self.controls["water"][wid] = iso(now + timedelta(minutes=WATER_MIN))
+                zone = (workers.get(wid) or {}).get("zone") or "B"
+                self._schedule_drink(wid, now, ZONE_ETA.get(zone, 4))
+            elif e.get("action") in ("on_my_way", "send_first_aider", "call_999") and wid:
+                # A supervisor responded to the SOS: help reaches the worker shortly.
+                if wid not in self.controls["sos_help"]:
+                    arrive = now + timedelta(minutes=SOS_HELP_MIN)
+                    self.controls["sos_help"][wid] = {"arrive": iso(arrive), "until": iso(arrive + timedelta(minutes=10))}
             elif e.get("action") == "buzz" and wid:
                 self.controls["slow"][wid] = iso(now + timedelta(minutes=SLOW_DOWN_MIN))
             elif e.get("action") in ("approve", "override") and e.get("proposal_id"):
@@ -455,7 +497,8 @@ class Agent:
 
     def _write_controls(self, now):
         for table in self.controls.values():
-            for key in [k for k, v in table.items() if datetime.fromisoformat(v) <= now]:
+            ends = {k: (v["until"] if isinstance(v, dict) else v) for k, v in table.items()}
+            for key in [k for k, until in ends.items() if datetime.fromisoformat(until) <= now]:
                 del table[key]
         _write_json(CONTROLS_FILE, self.controls)
 

@@ -182,6 +182,14 @@
     renderRules(a.rules || []);
   }
 
+  // A case follows its alert: Open -> Responding (someone acted) -> Resolved
+  // (closed when the worker is back to steady or the SOS stops).
+  function caseState(c) {
+    if (c.status !== "open") return { state: "resolved", responses: [] };
+    const alert = R.findAlert(c.alert_ids && c.alert_ids[c.alert_ids.length - 1]);
+    return alert ? R.alertState(alert) : { state: c.acted ? "responding" : "open", responses: [] };
+  }
+
   // ---------------------------------------------------------------- cases
   function pickDefault(cases) {
     const open = cases.filter((c) => c.status === "open");
@@ -201,15 +209,16 @@
     const chips = [...cases.filter((x) => x.status === "open"), ...cases.filter((x) => x.status !== "open").slice(0, 5)];
     R.setHTML(document.getElementById("case-picker"), chips.map((x) =>
       `<button type="button" class="chip" data-case="${esc(x.case_id)}" data-key="case-${esc(x.case_id)}" aria-pressed="${x.case_id === selectedCase}">
-        ${x.status === "open" ? '<span class="open-dot" aria-hidden="true"></span>' : ""}${esc(x.worker_id)} · ${x.status === "open" ? "open" : "closed"}</button>`).join(""));
+        ${caseState(x).state === "open" ? '<span class="open-dot" aria-hidden="true"></span>' : ""}${esc(x.worker_id)} · ${{ open: "open", responding: "responding", resolved: "resolved" }[caseState(x).state]}</button>`).join(""));
 
     if (!c) {
       document.getElementById("case-title").textContent = "Live case";
       R.setHTML(document.getElementById("timeline"),
         `<li class="case-empty">No cases yet. The agent opens a case as soon as the AI predicts heat stress, a worker reaches the danger zone, or someone presses SOS.</li>`);
     } else {
-      document.getElementById("case-title").textContent =
-        `${c.status === "open" ? "Live case" : "Closed case"} · ${c.worker_id}, ${crewLabel(c.job)}`;
+      const cst = caseState(c);
+      R.setHTML(document.getElementById("case-title"),
+        `${c.status === "open" ? "Live case" : "Resolved case"} · ${esc(c.worker_id)}, ${esc(crewLabel(c.job))} ${R.stateTagHTML(cst)}`);
       let n = 0;
       R.setHTML(document.getElementById("timeline"), c.steps.map((s) => {
         let ico;
@@ -221,14 +230,16 @@
         return `<li><span class="t">${R.hhmm(s.sim_time)}</span>${ico}
           <div><div class="step-title">${esc(s.title)}</div><div class="step-detail">${esc(s.detail)}</div></div></li>`;
       }).join("") + (c.status === "open" ? `<li><span class="t"></span><span class="step-ico ico-note" aria-hidden="true">…</span>
-          <div><div class="step-title" style="color:var(--text-2)">Watching</div><div class="step-detail">The agent checks the outcome around ${R.hhmm(c.check_due)}.</div></div></li>` : ""));
+          <div><div class="step-title" style="color:var(--text-2)">${cst.state === "open" ? "Open · needs action" : "Responding · watching"}</div>
+          <div class="step-detail">${c.check_due ? `The agent checks the outcome around ${R.hhmm(c.check_due)}. ` : ""}The case resolves once ${esc(c.worker_id)}'s readings are back to steady${c.kind === "sos" ? " and the helmet stops signalling" : " for 5 minutes"}.</div>
+          ${R.responsesHTML(cst)}</div></li>` : ""));
     }
 
     // All cases table
     R.setHTML(document.getElementById("cases-body"), cases.length ? cases.map((x) => {
       const last = x.steps.at(-1) || {};
-      const outcome = x.status === "open" ? R.statusHTML("act").replace("Act now", "Open")
-        : x.reached_red ? "Closed · reached danger zone" : "Closed · caught early";
+      const outcome = x.status === "open" ? R.stateTagHTML(caseState(x))
+        : `${R.stateTagHTML({ state: "resolved" })} <span class="hint">${x.reached_red ? "reached danger zone" : "caught early"}</span>`;
       return `<tr data-case="${esc(x.case_id)}" tabindex="0" data-key="row-${esc(x.case_id)}">
         <td class="num">${R.hhmm(x.opened_sim)}</td>
         <td><b>${esc(x.worker_id)}</b> <span class="hint">${esc(x.site)}</span></td>

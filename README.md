@@ -160,8 +160,8 @@ simulated body changes gradually (about 1.5 minutes to adjust to new effort), so
 workers pass through Rising before Act now (SOS presses are instant). A resting
 worker flagged only because the WBGT is extreme gets a plain "Extreme heat only"
 reason. The agent still acts on danger forecasts from 30% confidence. An alert stays open
-until the worker has been calm for 10 simulated minutes (so a worker hovering at
-the edge is one episode, not many), and after a predicted alert clears the same
+until the worker has been back to Steady for 5 simulated minutes (still Rising =
+still recovering), and after a predicted alert resolves the same
 worker can't get another *predicted* alert for 45 minutes (RED and SOS alerts are
 never held back). The agent's response is stepped: a helmet buzz (the worker
 sticks to light tasks for 10 minutes) and water first; a shade break when danger
@@ -199,11 +199,26 @@ Also starts a free Cloudflare quick tunnel and prints a temporary public link
 
 - **When:** the risk engine opens an alert when a worker turns RED or the AI
   predicts RED. A predicted alert *escalates* if the worker then actually turns RED.
-  An alert clears once the worker has been calm for 2 simulated minutes (so a
-  worker flickering RED/YELLOW doesn't trigger a flood of alerts).
-- **Pop-ups** (bottom-right) for every unhandled alert, with **Dispatch water**,
-  **Schedule shade break** and **Acknowledge**. Any of these handles the alert.
-  After an escalation, the supervisor has to respond again.
+- **Three states**, shown the same way on the Control room, Workers and AI agent pages:
+  - **Open** (coral): nobody has acted yet. Only Open alerts count in the
+    header's "open alerts" chip.
+  - **Responding** (sun-gold, calmer): as soon as anyone acts. It lists what was
+    done ("Water on the way · ETA 4 min", "Shade break until 12:15", "Helmet
+    buzzed", "Supervisor on the way"), the buttons already used show a ✓, and the
+    SOS alarm stops. The AI agent's automatic steps count for *predicted* alerts;
+    the danger zone and SOS need a supervisor. After an escalation to the danger
+    zone, the supervisor has to respond again.
+  - **Resolved** (sage): automatically, once the worker has been Steady for 5
+    simulated minutes (SOS: once help arrives and the helmet stops signalling).
+    Logged as "back to steady · alert resolved"; shown as "Resolved ✓" for a minute.
+- **Actions change the simulated worker:** water arrives after the runner's ETA
+  (3–6 min by zone) and the worker stops for a 2-minute drink, then heats up more
+  slowly for 30 min; a shade break rests them in the shade for 15 min; a buzz keeps
+  them on light tasks for 10 min; responding to an SOS sends help that arrives
+  in 3 min. So alerts recover and resolve during the demo.
+- **Show location** scrolls smoothly to the map, centres it on the worker and
+  highlights their dot. The live refresh never moves the page or loses the
+  selected worker.
 - **Sound:** one plain mid-pitch tone (620 Hz), nothing musical. **New Act-now /
   AI-prediction alert**: a firm half-second tone played twice with a short gap, once
   per new alert. **SOS**: an urgent burst of 6 rapid short pulses every 2 s until a
@@ -214,12 +229,10 @@ Also starts a free Cloudflare quick tunnel and prints a temporary public link
   been clicked once: the menu button shows a dot, and the SOS banner a hint, until then.
 - **Card buttons:** every card has Dispatch water / Schedule shade break and shows
   the last action taken.
-- **Action log** at the bottom: alerts raised, escalated and cleared, plus every
+- **Action log** at the bottom: alerts raised, escalated and resolved, plus every
   supervisor action with its response time. Stored in `data/alerts.jsonl`
   (risk engine) and `data/actions.jsonl` (dashboard server). `--demo` starts with
   an empty log; normal runs keep it.
-
-Actions are recorded but don't (yet) change the simulated worker.
 
 ## Running the risk engine
 

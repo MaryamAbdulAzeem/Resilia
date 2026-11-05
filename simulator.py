@@ -95,7 +95,7 @@ FELT_HEAT_START = 47.0   # "felt" heat (air + sun) at which strain starts to bui
 # heat strain are much more likely to call for help. With 15 workers this
 # gives roughly one SOS every half hour of simulated time on a hot day.
 SOS_BASE_CHANCE = 0.00015
-SOS_SIGNAL_SECONDS = 15 * 60   # the helmet keeps signalling SOS for 15 minutes
+SOS_SIGNAL_SECONDS = 45 * 60   # an unanswered SOS keeps signalling this long (until help arrives)
 SOS_STILL_SECONDS = 60         # after pressing, the worker stays still for a minute
 SITE_GATEWAYS = {"Dubai": "GW-DXB", "Abu Dhabi": "GW-AUH", "Sharjah": "GW-SHJ", "Al Ain": "GW-AAN"}
 ZONES = "ABCD"
@@ -154,20 +154,21 @@ class Worker:
         self.still_s = 0            # seconds the worker has stayed still after an SOS
 
     def update(self, air_temp, on_break=False, heavy_paused=False, hydrated=False, sun_w_m2=None,
-               slowed=False):
+               slowed=False, drinking=False):
         """
         Move the worker forward by one time step (one reading).
         on_break:     resting in the shade (a scheduled shade break)
         heavy_paused: the supervisor paused heavy work for this crew
         hydrated:     a water run arrived recently (heats up a bit more slowly)
         slowed:       the helmet buzzed "go to shade": light tasks only for a while
+        drinking:     the water runner has arrived: the worker stops for a drink
         sun_w_m2:     strength of the sunshine. When given, direct sun adds to the
                       heat load, so risk follows the day: highest around midday and
                       easing off as the sun goes down. (The AI model's training
                       shifts leave it out and use air temperature only.)
         """
-        if self.still_s > 0 or on_break:
-            self.activity = "resting"  # called for help, or on a shade break
+        if self.still_s > 0 or on_break or drinking:
+            self.activity = "resting"  # called for help, on a shade break, or drinking water
         else:
             self._pick_next_activity()
             if heavy_paused and self.activity == "heavy":
@@ -227,8 +228,16 @@ class Worker:
             weights=[w * tilt[a] for a, w in options.items()],
         )[0]
 
-    def helmet_step(self, sim_time, step_seconds):
-        """Helmet extras for one reading: solar battery and the SOS button."""
+    def helmet_step(self, sim_time, step_seconds, help_arrived=False):
+        """
+        Helmet extras for one reading: solar battery and the SOS button.
+        help_arrived: a supervisor responded to the SOS and help has reached the
+        worker, so the helmet stops signalling.
+        """
+        if self.sos_pressed_at is not None and help_arrived:
+            self.sos_pressed_at = None
+            self.still_s = 0
+            return
         hour = hour_of(sim_time)
         # Battery: a little drain all the time, solar strips on the shell top it up in sun.
         self.battery += -0.004 + 0.007 * (sun_w_m2(hour) / 950)
@@ -317,7 +326,25 @@ def active_until(table, key, sim_time):
     until = (table or {}).get(key)
     try:
         return bool(until) and datetime.fromisoformat(until) > sim_time
-    except ValueError:
+    except (ValueError, TypeError):
+        return False
+
+
+def in_window(table, key, sim_time, start="from", end="until"):
+    """True if sim_time is inside an entry's {from, until} window (e.g. drinking water)."""
+    entry = (table or {}).get(key)
+    try:
+        return bool(entry) and datetime.fromisoformat(entry[start]) <= sim_time < datetime.fromisoformat(entry[end])
+    except (ValueError, TypeError, KeyError):
+        return False
+
+
+def has_arrived(table, key, sim_time):
+    """True once an entry's 'arrive' time has passed (e.g. help reaching an SOS)."""
+    entry = (table or {}).get(key)
+    try:
+        return bool(entry) and datetime.fromisoformat(entry["arrive"]) <= sim_time
+    except (ValueError, TypeError, KeyError):
         return False
 
 
@@ -391,8 +418,10 @@ def main():
                               heavy_paused=active_until(controls.get("pauses"), worker.site, sim_time),
                               hydrated=active_until(controls.get("water"), worker.worker_id, sim_time),
                               sun_w_m2=sun_w_m2(hour),
-                              slowed=active_until(controls.get("slow"), worker.worker_id, sim_time))
-                worker.helmet_step(sim_time, args.interval)
+                              slowed=active_until(controls.get("slow"), worker.worker_id, sim_time),
+                              drinking=in_window(controls.get("drink"), worker.worker_id, sim_time))
+                worker.helmet_step(sim_time, args.interval,
+                                   help_arrived=has_arrived(controls.get("sos_help"), worker.worker_id, sim_time))
                 reading = worker.reading()
                 reading["air_temp_c"] = round(air, 1)
                 reading["sim_time"] = sim_time.isoformat(timespec="seconds")

@@ -92,7 +92,9 @@
     const focusKey = el.contains(document.activeElement) ? document.activeElement.dataset.key : null;
     el.innerHTML = html;
     el._lastHTML = html;
-    if (focusKey) el.querySelector(`[data-key="${focusKey}"]`)?.focus();
+    // preventScroll: re-focusing must never scroll the page back to the button
+    // (that was the "Show location" jump).
+    if (focusKey) el.querySelector(`[data-key="${focusKey}"]`)?.focus({ preventScroll: true });
   };
 
   let toastTimer = null;
@@ -120,15 +122,83 @@
   };
 
   R.alerts = () => (R.state.scores && R.state.scores.alerts) || [];
+  // Alerts resolved in the last minute (shown briefly as "Resolved ✓").
+  R.resolvedAlerts = () => (R.state.scores && R.state.scores.resolved_recent) || [];
 
-  // An alert is handled by any supervisor action logged for it. If a "predicted"
-  // alert later ESCALATED to actual RED, only actions after that count.
-  // The AI agent's automatic steps also handle a *predicted* alert (it buzzed,
-  // sent water and scheduled a break), but never a RED or SOS alert: those
-  // always need a person.
-  R.handledAction = (alert) => R.state.log.find((e) => e.alert_id === alert.alert_id && (
-    (e.type === "action" && (!alert.escalated_at || e.time >= alert.escalated_at)) ||
-    (e.type === "agent" && e.kind === "act" && alert.kind === "predicted_red"))) || null;
+  // ---- Alert states: OPEN (needs action) -> RESPONDING (someone acted) -> RESOLVED
+  // (the worker's readings are back to steady; the risk engine closes it).
+  // Same timings as the simulator/agent, so the ETAs count down correctly.
+  const ZONE_ETA = { A: 3, B: 4, C: 5, D: 6 };   // water runner minutes per zone
+  const HELP_ETA = 3;                             // SOS: help reaches the worker
+  const BREAK_MIN = 15;
+  const simMs = (iso) => new Date(iso).getTime();
+  const minutesSince = (e) => (R.state.scores && e.sim_time
+    ? (simMs(R.state.scores.sim_time) - simMs(e.sim_time)) / 60000 : 0);
+  const clockPlus = (iso, min) => {               // "11:42" + 15 min -> "11:57" (sim clock)
+    const [h, m] = R.hhmm(iso).split(":").map(Number);
+    const t = (h * 60 + m + min) % 1440;
+    return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;
+  };
+  const etaText = (e, eta, going, there) => {
+    const left = Math.ceil(eta - minutesSince(e));
+    return left > 0 ? `${going} · ETA ${left} min` : there;
+  };
+  // What each response looks like: which button it ticks, and a short summary.
+  const RESPONSES = {
+    dispatch_water: { group: "water", button: "dispatch_water",
+      text: (e, a) => etaText(e, ZONE_ETA[a.zone] || 4, "Water on the way", "Water delivered") },
+    water: { group: "water", button: "dispatch_water",
+      text: (e, a) => etaText(e, ZONE_ETA[a.zone] || 4, "Water on the way", "Water delivered") },
+    water_join: { group: "water", button: "dispatch_water",
+      text: (e) => etaText(e, 2, "Water on the way", "Water delivered") },
+    shade_break: { group: "break", button: "shade_break", text: (e) => breakText(e) },
+    short_break: { group: "break", button: "shade_break", text: (e) => breakText(e) },
+    buzz: { group: "buzz", button: "buzz", text: () => "Helmet buzzed" },
+    acknowledge: { group: "ack", button: "acknowledge", text: () => "Acknowledged" },
+    on_my_way: { group: "help", button: "on_my_way",
+      text: (e) => etaText(e, HELP_ETA, "Supervisor on the way", "Supervisor with the worker") },
+    send_first_aider: { group: "aider", button: "send_first_aider",
+      text: (e) => etaText(e, HELP_ETA, "First-aider on the way", "First-aider with the worker") },
+    first_aider: { group: "aider", text: () => "First-aider alerted by the agent" },
+    call_999: { group: "999", button: "call_999", text: () => "999 called" },
+  };
+  function breakText(e) {
+    return minutesSince(e) < BREAK_MIN ? `Shade break until ${clockPlus(e.sim_time, BREAK_MIN)}` : "Shade break done";
+  }
+
+  // Does this logged step move the alert to RESPONDING?
+  //  - a supervisor action (for a predicted alert that later reached the danger
+  //    zone, only actions taken after that count)
+  //  - the AI agent's automatic steps count for a *predicted* alert only: the
+  //    danger zone and SOS always need a person
+  const counts = (e, alert) => e.type === "action"
+    ? (!alert.escalated_at || e.time >= alert.escalated_at)
+    : alert.kind === "predicted_red" && !!RESPONSES[e.action] && e.action !== "first_aider";
+
+  R.alertState = (alert) => {
+    const entries = R.state.log.filter((e) => e.alert_id === alert.alert_id &&
+      (e.type === "action" || (e.type === "agent" && e.kind === "act")) && RESPONSES[e.action]);
+    const seen = new Set(), responses = [], done = new Set();
+    for (const e of entries) {             // newest first: keep the latest of each kind
+      const r = RESPONSES[e.action];
+      if (r.button) done.add(r.button);
+      if (seen.has(r.group)) continue;
+      seen.add(r.group);
+      responses.push({ text: r.text(e, alert), by: e.type === "agent" ? "agent" : "supervisor", entry: e });
+    }
+    const by = entries.find((e) => counts(e, alert)) || null;
+    const state = alert.state === "resolved" ? "resolved" : by ? "responding" : "open";
+    return { state, responses, done, by, summary: responses.map((r) => r.text).join(" · ") };
+  };
+  R.STATE_LABELS = { open: "Open · needs action", responding: "Responding", resolved: "Resolved ✓" };
+  R.stateTagHTML = (st) => `<span class="state-tag state-${st.state}"><i></i>${R.STATE_LABELS[st.state]}</span>`;
+  // "What was done" chips, e.g. "Water on the way · ETA 4 min (agent)".
+  R.responsesHTML = (st) => st.responses.length
+    ? `<ul class="responses">${st.responses.map((r) =>
+        `<li>${R.esc(r.text)} <small>· ${r.by === "agent" ? "AI agent" : "supervisor"} ${R.entryTime(r.entry)}</small></li>`).join("")}</ul>`
+    : "";
+
+  R.handledAction = (alert) => R.alertState(alert).by;
   R.byAgent = (e) => e && e.type === "agent";
   // Has this worker's helmet already been buzzed for their current alert (by the
   // AI agent or a supervisor)? Only then does "Buzz again" make sense.
@@ -229,12 +299,24 @@
     });
   });
 
+  // Labels once an action has been taken for the alert (the button shows a ✓).
+  const DONE_LABELS = {
+    dispatch_water: "Water dispatched", shade_break: "Shade break scheduled", buzz: "Buzzed · buzz again",
+    acknowledge: "Acknowledged", on_my_way: "On my way", send_first_aider: "First-aider sent", call_999: "999 called",
+  };
+  R.findAlert = (alertId) => alertId
+    ? [...R.alerts(), ...R.resolvedAlerts()].find((a) => a.alert_id === alertId) || null : null;
+
   R.actionButton = (action, workerId, alertId, cls = "btn btn-outline", label) => {
     if (R.state.viewOnly) return "";
     const key = `${action}:${workerId}:${cls}`;
-    return `<button type="button" class="${cls}" data-action="${action}" data-worker="${R.esc(workerId)}"
-      data-alert="${R.esc(alertId || "")}" data-key="${R.esc(key)}"${R.inFlight(action, workerId) ? " disabled" : ""}>
-      ${R.esc(label || R.ACTION_LABELS[action])}</button>`;
+    const alert = R.findAlert(alertId);
+    const done = !!alert && R.alertState(alert).done.has(action);
+    // A done button stays clickable (e.g. send water again), just calmer.
+    return `<button type="button" class="${cls}${done ? " is-done" : ""}" data-action="${action}" data-worker="${R.esc(workerId)}"
+      data-alert="${R.esc(alertId || "")}" data-key="${R.esc(key)}"${R.inFlight(action, workerId) ? " disabled" : ""}
+      ${done ? 'title="Already done for this alert · click to do it again"' : ""}>
+      ${done ? `✓ ${R.esc(DONE_LABELS[action])}` : R.esc(label || R.ACTION_LABELS[action])}</button>`;
   };
 
   function mergeLog(serverEntries) {
@@ -546,7 +628,8 @@
       (R.state.viewOnly ? "👁 " : "") + (R.state.site === "all" ? "All sites" : R.state.site);
     // On pages other than the control room, show an alert chip linking back to it.
     const chip = document.getElementById("rs-alerts");
-    const open = R.alerts().filter((a) => !R.isHandled(a));
+    // Only alerts nobody has acted on yet count as "open" (Responding ones don't).
+    const open = R.alerts().filter((a) => R.alertState(a).state === "open");
     const alertText = `⚠ ${open.length} open alert${open.length > 1 ? "s" : ""}`;
     chip.hidden = pageKey === "control" || !open.length || !!headerOpts.cta;
     if (open.length) chip.textContent = alertText;

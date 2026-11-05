@@ -38,7 +38,9 @@ SETTINGS_FILE = Path("data") / "settings.json"
 ALERTS_FILE = Path("data") / "alerts.jsonl"
 # An alert stays open until the worker has been calm (not RED, not predicted RED)
 # for this long. Stops one worker flickering RED/YELLOW from raising many alerts.
-CLEAR_AFTER_SIM_SECONDS = 10 * 60   # one episode: brief dips out of risk don't close it
+# An alert resolves once the worker has been back to Steady for this long
+# (while they're still Rising, they're recovering and the alert stays open).
+RESOLVE_AFTER_STEADY_SIM_SECONDS = 5 * 60
 # After a predicted alert clears, don't raise another PREDICTED alert for the
 # same worker for this long (RED and SOS alerts are never held back). Stops a
 # worker hovering at the forecast threshold from triggering alert after alert.
@@ -563,7 +565,8 @@ def run_once(weather_cache, predictor=None, speed=1, settings_version=0, alert_m
                                       if mode == "live" and v["source"] != "open-meteo"),
         "speed": speed,
         "agent": agent_summary,
-        "alerts": alerts,   # open alerts for the supervisor
+        "alerts": alerts,   # open alerts for the supervisor (Open or Responding)
+        "resolved_recent": alert_manager.recent_resolved if alert_manager else [],
         "sites": sites,
         "workers": results,
     }
@@ -576,7 +579,9 @@ class AlertManager:
 
     An alert OPENS when a worker turns RED, or the AI predicts they'll reach RED.
     If a "predicted" alert's worker then actually turns RED, it ESCALATES.
-    It CLEARS once the worker has been calm for CLEAR_AFTER_SIM_SECONDS.
+    It RESOLVES once the worker has been back to Steady for
+    RESOLVE_AFTER_STEADY_SIM_SECONDS (pages show it as Open, Responding once
+    someone acts, then Resolved).
     Each of these moments is written to data/alerts.jsonl.
     """
 
@@ -586,6 +591,7 @@ class AlertManager:
         self.sos = {}         # worker_id -> open SOS (help request from the helmet button)
         self.last_cleared = {}  # worker_id -> when their last alert cleared (for the cooldown)
         self.last_red_forecast = {}  # worker_id -> when the AI last forecast RED for them
+        self.recent_resolved = []    # alerts resolved in the last minute (pages show "Resolved")
 
     def update_sos(self, r, now):
         """Open an SOS alert when a helmet starts signalling, close it when it stops."""
@@ -607,7 +613,9 @@ class AlertManager:
             self.sos[wid] = alert
             self._log("sos", alert, f"{wid} held the helmet SOS button: help requested")
         elif not pressed and alert is not None:
-            self._log("sos_cleared", alert, f"{wid}'s helmet stopped signalling SOS")
+            self._log("sos_cleared", alert, f"SOS resolved · {wid}'s helmet stopped signalling")
+            self.recent_resolved.append(dict(alert, resolved_at=timestamp(), resolved_sim=self.sim_time,
+                                             resolved_ts=time.time(), state="resolved"))
             del self.sos[wid]
             alert = None
         if alert is not None:
@@ -679,17 +687,26 @@ class AlertManager:
                 alert["minutes"] = forecast["minutes"] if forecast and kind == "predicted_red" else None
                 alert["probability"] = forecast["probability"] if forecast else None
             elif alert is not None:
-                since = self.calm_since.setdefault(wid, now)
-                if (now - since) * factor >= CLEAR_AFTER_SIM_SECONDS:
-                    self.last_cleared[wid] = now
-                    self._log("alert_cleared", alert, f"{wid} is back to {r['level']}")
-                    del self.active[wid]
-                    del self.calm_since[wid]
+                # RESOLVED once the worker's readings have been back to Steady for a
+                # few minutes (still Rising = still recovering: the alert stays open).
+                if r["status"] != "steady":
+                    self.calm_since.pop(wid, None)
+                else:
+                    since = self.calm_since.setdefault(wid, now)
+                    if (now - since) * factor >= RESOLVE_AFTER_STEADY_SIM_SECONDS:
+                        self.last_cleared[wid] = now
+                        self._log("alert_resolved", alert, f"{wid} back to steady · alert resolved")
+                        self.recent_resolved.append(dict(alert, resolved_at=timestamp(), resolved_sim=sim_time,
+                                                         resolved_ts=time.time(), state="resolved"))
+                        del self.active[wid]
+                        del self.calm_since[wid]
 
             if wid in self.active:
                 # The worker's level right now (an open RED alert may be YELLOW again).
                 self.active[wid]["current_level"] = r["level"]
             r["alert"] = self.active.get(wid)
+        # Keep resolved alerts for one real minute, so pages can show "Resolved ✓".
+        self.recent_resolved = [a for a in self.recent_resolved if time.time() - a["resolved_ts"] < 60]
         # SOS help requests first: they're the most urgent.
         return list(self.sos.values()) + list(self.active.values())
 

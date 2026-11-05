@@ -43,6 +43,16 @@
   .flag-sos { background: var(--coral-soft); color: var(--coral-text); }
   .flag-break { background: #e6ecf2; color: var(--navy); }
   .flag-low { background: var(--sun-soft); color: var(--gold-text); }
+  .flag-open { background: var(--coral-soft); color: var(--coral-text); }
+  .flag-responding { background: var(--sun-soft); color: var(--gold-text); }
+  .flag-resolved { background: var(--sage-soft); color: var(--sage-text); }
+  /* Alert state block in the detail panel */
+  .alert-state { margin-top: 14px; padding: 14px 16px; border-radius: 14px; border: 1px solid var(--line); }
+  .alert-state.open { background: #fff7f5; border-color: rgba(238, 90, 75, .45); }
+  .alert-state.responding { background: #fffaf1; border-color: #f1dcb5; }
+  .alert-state.resolved { background: var(--sage-soft); border-color: rgba(111, 163, 123, .45); }
+  .alert-state p { margin: 8px 0 0; font-size: 14px; color: var(--text-2); }
+  .as-top { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
 
   /* ---- Detail panel ---- */
   .detail { position: sticky; top: 16px; padding: 24px 26px; }
@@ -139,6 +149,11 @@
     return w.status === "rising" ? "Watch" : "Stable";
   }
 
+  // The worker's current alert (SOS first), or one resolved in the last minute.
+  const ALERT_KIND = { sos: "SOS help call", red: "Danger zone", predicted_red: "Predicted heat stress" };
+  const alertOf = (w) => w.sos_alert || w.alert ||
+    [...R.resolvedAlerts()].reverse().find((a) => a.worker_id === w.worker_id) || null;
+
   // ------------------------------------------------------------ roster
   function visibleWorkers() {
     const q = document.getElementById("search").value.trim().toLowerCase();
@@ -168,13 +183,16 @@
       const t = trailOf(w.worker_id);
       const share = riskShare(w.worker_id);
       const low = (w.battery_pct ?? 100) < 20;
+      const alert = alertOf(w);
+      const st = alert ? R.alertState(alert).state : null;
+      const flag = st ? `<span class="flag flag-${st}">${{ open: "Alert open", responding: "Responding", resolved: "Resolved ✓" }[st]}</span>` : "";
       return `<button type="button" class="wcard ${w.status}" data-worker-pick="${esc(w.worker_id)}" data-key="w-${esc(w.worker_id)}" aria-pressed="${selected === w.worker_id}">
         <div class="wtop"><div><div class="wid">${esc(w.worker_id)}</div><div class="wmeta">${esc(w.job)} · ${esc(w.site)} · Zone ${esc(w.zone || "?")}</div></div>${R.statusHTML(w.status)}</div>
         <div class="wvitals"><span><b>${w.avg_heart_rate_bpm}</b> bpm</span><span><b>${w.avg_skin_temp_c.toFixed(1)}</b> °C</span></div>
         <div class="wfc">${esc(forecastText(w))}</div>
         ${sparkline(t.map((p) => p[1]), w.status === "act" ? "#ee5a4b" : w.status === "rising" ? "#e8862a" : "#6fa37b")}
         <div class="wfoot"><span>At risk today: <b>${todayOf(w.worker_id) ? Math.round(share * 100) + "%" : "–"}</b></span><span>☀ ${w.battery_pct ?? "?"}%</span></div>
-        ${w.sos_pressed_at ? '<span class="flag flag-sos">SOS</span>' : ""}${w.on_break ? '<span class="flag flag-break">On shade break</span>' : ""}${low ? '<span class="flag flag-low">Low battery</span>' : ""}
+        ${flag}${w.sos_pressed_at ? '<span class="flag flag-sos">SOS</span>' : ""}${w.on_break ? '<span class="flag flag-break">On shade break</span>' : ""}${low ? '<span class="flag flag-low">Low battery</span>' : ""}
       </button>`;
     }).join("") : '<p class="empty">No workers match.</p>');
   }
@@ -303,6 +321,16 @@
     const cases = ((R.state.agent && R.state.agent.cases) || []).filter((c) => c.worker_id === w.worker_id);
     const events = R.actionsFor(w.worker_id).slice(0, 6);
     const alertId = w.alert ? w.alert.alert_id : (w.sos_alert ? w.sos_alert.alert_id : null);
+    const alert = alertOf(w);
+    const st = alert ? R.alertState(alert) : null;
+    const stateBlock = st ? `<div class="alert-state ${st.state}">
+        <div class="as-top">${R.stateTagHTML(st)}<span class="hint">${esc(ALERT_KIND[alert.kind] || "Alert")} · since ${R.hhmm(alert.started_sim)}</span></div>
+        <p>${st.state === "resolved" ? `${alert.kind === "sos" ? "Help arrived and the helmet stopped signalling" : "Readings back to steady"}: resolved at ${R.hhmm(alert.resolved_sim)} and logged.`
+          : st.state === "responding" ? `Someone is on it. It resolves once ${esc(w.worker_id)}'s readings are steady for 5 minutes.`
+          : alert.kind === "predicted_red" ? "The AI expects heat stress soon. Any action moves it to Responding."
+          : "Needs a person now. Any action moves it to Responding."}</p>
+        ${R.responsesHTML(st)}
+      </div>` : "";
     R.setHTML(box, `
       ${R.statusHTML(w.status)}
       <h2>${esc(w.worker_id)}</h2>
@@ -315,6 +343,7 @@
       </div>
       <div><b>${esc(forecastText(w))}</b>${w.forecast ? ` <span class="hint">· AI ${Math.round(w.forecast.probability * 100)}% likely</span>` : ""}</div>
       ${w.reasons.length ? `<ul class="list" style="margin-top:8px">${w.reasons.map((r) => `<li>${esc(r)}</li>`).join("")}</ul>` : ""}
+      ${stateBlock}
       ${R.state.viewOnly ? '<p class="hint" style="margin-top:14px">View-only link: actions are taken in the control room.</p>' : `
       <div class="actions">
         ${R.actionButton("dispatch_water", w.worker_id, alertId, "btn btn-primary btn-sm")}
