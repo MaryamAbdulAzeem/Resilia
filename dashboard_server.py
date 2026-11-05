@@ -14,11 +14,11 @@ It does three things:
   GET  /api/insights   -> shift heat-map, risk by job, alerts vs interventions, recommendations
   POST /api/decide     -> a supervisor approves or overrides one of the agent's requests
 
-View-only mode: visitors coming through the public Cloudflare link can watch
-but not change anything (no action buttons, no weather switch). Only people
-using the dashboard on this laptop (http://localhost:8000) have full control.
-When hosted online (RESILIA_PUBLIC=1, or a PORT variable as Render sets),
-EVERY visitor is view-only and the server listens on 0.0.0.0 and $PORT.
+Full control for everyone: every visitor (on the laptop, the Cloudflare link or
+the Render link) can press the action buttons, approve/override the agent and
+flip the weather switch. When hosted online (RESILIA_PUBLIC=1, or a PORT variable
+as Render sets) the server listens on 0.0.0.0 and $PORT.
+To make every visitor view-only again, set RESILIA_VIEW_ONLY=1.
 
 Run it with:  python dashboard_server.py
 Then open:    http://localhost:8000
@@ -52,13 +52,17 @@ PROPOSAL_ID = re.compile(r"^P\d{1,6}$")
 DECISIONS = {"approve": "Approved the agent's request", "override": "Overrode the agent's request"}
 
 # Cloudflare adds these headers to every visit that comes through its tunnel.
-# Visitors can't remove them, and this server only accepts connections from
-# this computer, so a request WITHOUT them really is from this laptop.
+# Only used to decide who is shown the laptop's share link (not for permissions).
 TUNNEL_HEADERS = ("Cf-Connecting-Ip", "Cf-Ray", "Cdn-Loop")
+
+# Off by default: everyone has full control. Set RESILIA_VIEW_ONLY=1 to make
+# every visitor view-only (no action buttons, no weather switch).
+VIEW_ONLY = os.environ.get("RESILIA_VIEW_ONLY", "").strip().lower() not in ("", "0", "false", "no")
+
 
 # Hosted online: render.yaml sets RESILIA_PUBLIC=1, and Render always sets PORT
 # (the laptop never does). Either one means the server is open to the internet:
-# listen on 0.0.0.0 and $PORT, and make EVERY visitor view-only.
+# listen on 0.0.0.0 and $PORT.
 def is_hosted():
     flag = os.environ.get("RESILIA_PUBLIC", "").strip().lower()
     return flag not in ("", "0", "false", "no") or bool(os.environ.get("PORT", "").strip())
@@ -204,17 +208,17 @@ def read_share_url():
 
 
 class DashboardHandler(SimpleHTTPRequestHandler):
-    def is_public_visitor(self):
-        """True if this visitor must be view-only: hosted online, or via the public Cloudflare link."""
-        return PUBLIC_HOSTING or any(h in self.headers for h in TUNNEL_HEADERS)
+    def is_view_only(self):
+        """True only if view-only mode was switched on (RESILIA_VIEW_ONLY=1). Default: full control."""
+        return VIEW_ONLY
 
     def do_GET(self):
         if self.path.startswith("/api/access"):
-            public = self.is_public_visitor()
+            via_tunnel = any(h in self.headers for h in TUNNEL_HEADERS)
             return self.send_json({
-                "view_only": public,
-                # Only the laptop is told the public link (to show and share it).
-                "share_url": None if public else read_share_url(),
+                "view_only": self.is_view_only(),
+                # Only the laptop is told its temporary Cloudflare link (to show and share it).
+                "share_url": None if via_tunnel or PUBLIC_HOSTING else read_share_url(),
             })
         if self.path.startswith("/api/scores"):
             try:
@@ -273,10 +277,9 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             return {}
 
     def do_POST(self):
-        # View-only: nobody on the public link can change anything.
-        if self.is_public_visitor():
-            return self.send_json({"error": "This is a view-only link. "
-                                            "Actions can only be taken on the control-room laptop."}, 403)
+        # Everyone has full control, unless view-only mode was switched on.
+        if self.is_view_only():
+            return self.send_json({"error": "This dashboard is in view-only mode."}, 403)
         if self.path.startswith("/api/actions"):
             return self.handle_action()
         if self.path.startswith("/api/decide"):
@@ -336,7 +339,7 @@ def main():
         # Laptop: 127.0.0.1 = only this computer can open it (safer on hackathon wifi).
         host, port = "127.0.0.1", args.port or 8000
     server = ThreadingHTTPServer((host, port), handler)
-    print(f"Dashboard listening on {host}:{port}" + (" (hosted: public, view-only for everyone)" if PUBLIC_HOSTING else
+    print(f"Dashboard listening on {host}:{port}" + (f" (hosted: public, {'view-only' if VIEW_ONLY else 'full control'} for everyone)" if PUBLIC_HOSTING else
                                                      f"  ->  http://localhost:{port}  (Ctrl+C to stop)"), flush=True)
     try:
         server.serve_forever()

@@ -240,7 +240,7 @@ def main():
 
         if hosted:
             print(f"\nHosted online: dashboard listening on 0.0.0.0:{os.environ.get('PORT') or 10000}, "
-                  "every visitor is view-only.", flush=True)
+                  "every visitor has full control.", flush=True)
         else:
             print("\nOpen http://localhost:8000 in your browser (full control on this laptop).")
         print("The first scores appear after about 5 seconds. Press Ctrl+C to stop everything.")

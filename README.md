@@ -179,7 +179,7 @@ with no warning) stopped before the danger zone, currently about 46%. In extreme
 midday heat a warning often can't prevent the danger zone, which is why the
 scheduling advice matters.
 
-## Sharing a public link (view-only)
+## Sharing a temporary public link
 
 ```
 python run_all.py --demo --share
@@ -189,10 +189,9 @@ Also starts a free Cloudflare quick tunnel and prints a temporary public link
 (`https://<random-words>.trycloudflare.com`). It also appears as a green
 "🌐 Shared" pill on the laptop's dashboard (click to copy it).
 
-- **View-only:** anyone opening the public link can watch everything but can't
-  press action buttons or change the weather. The server refuses changes from
-  the tunnel (it recognises Cloudflare's headers); only `http://localhost:8000`
-  on the laptop has full control.
+- **Full control for everyone:** anyone with the link can press the action
+  buttons, approve/override the agent and change the weather, just like on the
+  laptop. To make every visitor view-only, set `RESILIA_VIEW_ONLY=1` before starting.
 - **Temporary:** the link stops when you press `Ctrl+C`, and each run gets a new
   address. If the link drops, `run_all.py` makes a new one (up to 3 times) and
   prints it; the local dashboard keeps running either way.
@@ -204,7 +203,7 @@ Also starts a free Cloudflare quick tunnel and prints a temporary public link
 `render.yaml` deploys the whole demo as one free Render web service
 (`python run_all.py --demo --loop 20`). When hosted (`RESILIA_PUBLIC=1` or
 Render's `PORT` is set) the dashboard listens on `0.0.0.0:$PORT`, every visitor
-is view-only, and the programs' output is copied into Render's log (each line
+has full control (add `RESILIA_VIEW_ONLY=1` on Render to make it view-only), and the programs' output is copied into Render's log (each line
 tagged `[simulator]`, `[risk engine]` or `[dashboard]`; routine tables about once
 a minute). Use `python run_all.py --demo --stream` to see the same on the laptop.
 

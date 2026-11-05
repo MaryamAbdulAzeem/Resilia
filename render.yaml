@@ -3,8 +3,9 @@
 # run_all.py starts the simulator, risk engine and dashboard together, in demo
 # mode (15x speed, summer scenario). --loop 20 restarts the demo day every
 # 20 minutes, so visitors always see the midday heat, never night.
-# RESILIA_PUBLIC=1 makes the dashboard listen on 0.0.0.0 and Render's $PORT,
-# and makes EVERY visitor view-only (the public link is for judges).
+# RESILIA_PUBLIC=1 makes the dashboard listen on 0.0.0.0 and Render's $PORT.
+# Every visitor has full control (action buttons, approvals, weather switch).
+# To make the link view-only again, add an env var RESILIA_VIEW_ONLY = 1.
 # No Cloudflare tunnel here: Render gives the service its own public link.
 services:
   - type: web
