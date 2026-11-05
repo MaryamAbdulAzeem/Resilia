@@ -499,6 +499,7 @@ def run_once(weather_cache, predictor=None, speed=1, settings_version=0, alert_m
 
     results = []
     sites = {}
+    forecast_inputs = []
     for worker_id in sorted(readings_by_worker):
         history = readings_by_worker[worker_id]
         latest = history[-1]
@@ -515,12 +516,10 @@ def run_once(weather_cache, predictor=None, speed=1, settings_version=0, alert_m
         result["skin_change_5m"] = trend_5m(history, "skin_temp_c")
 
         # AI forecast: will this worker's risk rise in the next 15 minutes?
+        # (Asked for all workers at once, below: one model call is much cheaper.)
         result["forecast"] = None
-        if predictor is not None:
-            wbgt = estimate_wbgt(weather["air_temp_c"], weather["humidity_pct"], weather["solar_w_m2"])
-            result["forecast"] = predictor.forecast(history, wbgt, result["level"], result["score"])
-        result["status"] = crew_status(result)
-        steady_wording(result)
+        forecast_inputs.append((history, estimate_wbgt(weather["air_temp_c"], weather["humidity_pct"],
+                                                       weather["solar_w_m2"]), result["level"], result["score"]))
         results.append(result)
         if site_history is not None:
             site_history.add(site, sim_time, result["wbgt_c"], weather["air_temp_c"])
@@ -535,6 +534,13 @@ def run_once(weather_cache, predictor=None, speed=1, settings_version=0, alert_m
             "observed_at": weather["observed_at"],
             "history": site_history.recent(site) if site_history is not None else [],
         }
+
+    # AI forecast for every worker in ONE model call, then each worker's status.
+    forecasts = predictor.forecast_many(forecast_inputs) if predictor is not None else [None] * len(results)
+    for result, forecast in zip(results, forecasts):
+        result["forecast"] = forecast
+        result["status"] = crew_status(result)
+        steady_wording(result)
 
     # Most at-risk workers first; among equal scores, rising forecasts first (soonest first).
     def sort_key(r):
@@ -553,7 +559,9 @@ def run_once(weather_cache, predictor=None, speed=1, settings_version=0, alert_m
 
     mode = "offline" if weather_cache.offline else "live"
     output = {
-        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        # With the time zone (e.g. +00:00 on Render): the browser works out the age
+        # from this, and without a zone it would read the server's clock as its own.
+        "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "sim_time": sim_time,                     # the simulator's clock (UAE time)
         "sun": sun_times(sim_dt.date(), summer=(mode == "offline")),
         "devices": device_summary(results, latest_all),
@@ -738,7 +746,8 @@ class AlertManager:
 
 
 def timestamp():
-    return datetime.now().isoformat(timespec="seconds")
+    """Real time with its time zone, so browsers anywhere read it correctly."""
+    return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
 def write_json_safely(path, data):

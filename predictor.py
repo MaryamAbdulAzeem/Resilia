@@ -79,6 +79,11 @@ class Predictor:
         with open(model_file, "rb") as f:
             saved = pickle.load(f)
         self.model = saved["model"]
+        # The model was trained on all CPU cores; for these small live batches one
+        # thread is much faster (starting a pool of helper threads every cycle
+        # costs far more than the prediction itself, especially on a small server).
+        if hasattr(self.model, "n_jobs"):
+            self.model.n_jobs = 1
         self.info = saved.get("info", {})
         # Only warn when the model is at least this confident.
         # train_model.py picks this value by testing on unseen shifts.

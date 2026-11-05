@@ -167,7 +167,7 @@ class Agent:
 
     def _step(self, case, now, kind, title, detail, action=None, alert_id=None):
         entry = {
-            "time": datetime.now().isoformat(timespec="seconds"),
+            "time": datetime.now().astimezone().isoformat(timespec="seconds"),
             "sim_time": iso(now),
             "type": "agent",
             "kind": kind,                 # sense / predict / act / ask / check / note

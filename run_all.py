@@ -27,6 +27,7 @@ import signal
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -70,11 +71,52 @@ def history_needed():
         return True
 
 
+STREAM_OUTPUT = False       # also copy programs' output into this window (set when hosted / --stream)
+TABLE_EVERY_SECONDS = 60    # routine tables ("=== Round", "=== Heat-stress report"): one a minute
+
+
+def _pump(name, proc, log_file):
+    """Copy one program's output to its log file and (when streaming) to our own output."""
+    in_table = False
+    last_table = float("-inf")
+    show_table = False
+    try:
+        for line in proc.stdout:
+            log_file.write(line)
+            log_file.flush()
+            if not STREAM_OUTPUT:
+                continue
+            text = line.rstrip("\n")
+            # A routine table runs from its "=== ..." header to the next blank line.
+            if text.startswith("=== "):
+                in_table = True
+                show_table = time.time() - last_table >= TABLE_EVERY_SECONDS
+                if show_table:
+                    last_table = time.time()
+            elif in_table and not text.strip():
+                in_table = False
+                continue
+            if in_table and not show_table:
+                continue   # skip most routine tables; errors and events always come through
+            if text.strip():
+                print(f"[{name}] {text}", flush=True)
+    except ValueError:
+        pass   # the log file was closed while stopping
+    finally:
+        try:
+            log_file.close()
+        except OSError:
+            pass
+
+
 def start_program(name, command, log_name):
-    """Start one program with its output going to data/logs/<log_name>."""
+    """Start one program; its output goes to data/logs/<log_name> (and, when hosted, to our output)."""
     log_file = open(LOG_DIR / log_name, "w", encoding="utf-8")
-    proc = subprocess.Popen(command, cwd=BASE_DIR, stdout=log_file, stderr=subprocess.STDOUT)
-    return {"name": name, "proc": proc, "log": log_file, "log_name": log_name}
+    proc = subprocess.Popen(command, cwd=BASE_DIR, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True, encoding="utf-8", errors="replace", bufsize=1)
+    pump = threading.Thread(target=_pump, args=(name, proc, log_file), daemon=True)
+    pump.start()
+    return {"name": name, "proc": proc, "log": log_file, "log_name": log_name, "pump": pump}
 
 
 def start_tunnel(cloudflared):
@@ -104,7 +146,11 @@ def announce_link(url):
 def stop(program):
     if program["proc"].poll() is None:
         program["proc"].terminate()
-    program["log"].close()
+    try:
+        program["proc"].wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        program["proc"].kill()
+    program["pump"].join(timeout=5)   # the pump closes the log file once the output ends
 
 
 def main():
@@ -118,7 +164,11 @@ def main():
     parser.add_argument("--loop", type=float, default=None, metavar="MINUTES",
                         help="restart the demo day every MINUTES real minutes (for an always-on "
                              "public demo, so visitors always see the midday heat, never night)")
+    parser.add_argument("--stream", action="store_true",
+                        help="also show the programs' output here (always on when hosted, e.g. on Render)")
     args = parser.parse_args()
+    global STREAM_OUTPUT
+    STREAM_OUTPUT = args.stream or is_hosted()
 
     cloudflared = None
     if args.share:
@@ -218,19 +268,16 @@ def main():
             for program in running:
                 if program["proc"].poll() is not None:
                     print(f"! The {program['name']} stopped unexpectedly. Check data/logs/ for details.")
-                    if hosted:   # show why in the host's log, then stop (the host restarts us)
-                        print((LOG_DIR / program["log_name"]).read_text(encoding="utf-8", errors="ignore")[-3000:])
+                    program["pump"].join(timeout=5)
+                    # Show why (the end of its log), then stop everything.
+                    print(f"--- last lines of data/logs/{program['log_name']} (exit code {program['proc'].returncode}):")
+                    print((LOG_DIR / program["log_name"]).read_text(encoding="utf-8", errors="ignore")[-3000:], flush=True)
                     raise KeyboardInterrupt
             # Always-on demo: start the day again before the sun goes down.
             if args.loop and time.time() - cycle_started > args.loop * 60:
                 print("\nRestarting the demo day...", flush=True)
                 for program in running:
                     stop(program)
-                for program in running:
-                    try:
-                        program["proc"].wait(timeout=10)
-                    except subprocess.TimeoutExpired:
-                        program["proc"].kill()
                 running = start_all()
                 cycle_started = time.time()
             # The public link is optional: if it drops, keep the demo running

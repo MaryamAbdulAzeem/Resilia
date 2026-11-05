@@ -118,7 +118,7 @@ def current_worker_status(worker_id):
 def log_action(worker_id, action, alert_id):
     status = current_worker_status(worker_id)
     entry = {
-        "time": datetime.now().isoformat(timespec="seconds"),
+        "time": datetime.now().astimezone().isoformat(timespec="seconds"),   # with time zone
         "type": "action",
         "action": action,
         "label": ACTIONS[action],
@@ -152,7 +152,7 @@ def log_decision(proposal_id, decision):
     if proposal.get("status") != "waiting":
         return None, f"That request was already {proposal.get('status')}."
     entry = {
-        "time": datetime.now().isoformat(timespec="seconds"),
+        "time": datetime.now().astimezone().isoformat(timespec="seconds"),
         "type": "action",
         "action": decision,
         "label": f"{DECISIONS[decision]}: {proposal.get('title', '')}",

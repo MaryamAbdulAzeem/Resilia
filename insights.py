@@ -261,7 +261,7 @@ class ShiftStats:
         caught = predicted - escalated
         reached_despite_warning = escalated + self.red_warned
         return {
-            "generated_at": datetime.now().isoformat(timespec="seconds"),
+            "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
             "first_sim": self.first_sim.isoformat() if self.first_sim else None,
             "last_sim": self.last_sim.isoformat() if self.last_sim else None,
             "hours": HOURS,

@@ -199,6 +199,22 @@ Also starts a free Cloudflare quick tunnel and prints a temporary public link
 - Needs `cloudflared`: `winget install --id Cloudflare.cloudflared -e`.
 - Keep the laptop awake and online while sharing.
 
+## Permanent public link (Render)
+
+`render.yaml` deploys the whole demo as one free Render web service
+(`python run_all.py --demo --loop 20`). When hosted (`RESILIA_PUBLIC=1` or
+Render's `PORT` is set) the dashboard listens on `0.0.0.0:$PORT`, every visitor
+is view-only, and the programs' output is copied into Render's log (each line
+tagged `[simulator]`, `[risk engine]` or `[dashboard]`; routine tables about once
+a minute). Use `python run_all.py --demo --stream` to see the same on the laptop.
+
+- Times are saved with their time zone, so the "data is N s old" check is right
+  even though Render's clock runs on UTC and visitors are in the UAE.
+- The demo uses about 6% of one CPU core (the AI forecast runs once per cycle for
+  all workers, on one thread), which fits Render's free 0.1 CPU.
+- Free services sleep after 15 minutes without visitors; the first visit after that
+  takes about a minute and starts the demo day fresh.
+
 ## Supervisor alerts and actions
 
 - **When:** the risk engine opens an alert when a worker turns RED or the AI
