@@ -11,6 +11,11 @@ using (simulated) Resilia smart helmets. Design mock-ups are in `designs/`.
 | `risk_engine.py` | Reads the readings, gets live weather from Open-Meteo, estimates WBGT, rates each worker GREEN / YELLOW / RED and Steady / Rising / Act now, and raises heat and SOS alerts. |
 | `dashboard_server.py` | Small web server for the dashboard and its data. |
 | `dashboard/index.html` | Control room page (SOS banner, AI alert card, crew table, action log, map). |
+| `dashboard/ai-agent.html` | AI agent page: live case timeline, approvals (Approve / Override), automatic vs ask-first rules. |
+| `dashboard/insights.html` | Insights page: heat-map by site and hour, risk by job, alerts vs interventions, recommendations. |
+| `dashboard/about.html` | About page: the helmet, its three states (with live counts), and how it connects (with live numbers). |
+| `agent.py` | The AI agent: acts automatically on small steps, asks a human before big ones. |
+| `insights.py` | Builds the shift insights from the live data. |
 | `dashboard/assets/` | Shared Resilia styles and page engine (header, heat arc, live data, sound, actions). |
 | `run_all.py` | Starts the simulator, risk engine and dashboard together. |
 | `predictor.py` | AI forecast: turns readings into clues and asks the model about the next 15 minutes. |

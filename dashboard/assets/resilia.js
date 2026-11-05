@@ -15,7 +15,7 @@
     { key: "control", label: "Control room", href: "/", ready: true },
     { key: "agent", label: "AI agent", href: "/ai-agent.html", ready: true },
     { key: "insights", label: "Insights", href: "/insights.html", ready: true },
-    { key: "about", label: "About", href: "/about.html", ready: false },
+    { key: "about", label: "About", href: "/about.html", ready: true },
   ];
   const SITES = ["Dubai", "Abu Dhabi", "Sharjah", "Al Ain"];
   const POLL_MS = 3000;

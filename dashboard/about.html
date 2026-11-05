@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Resilia · About</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="/assets/resilia.css">
+<style>
+  .band { color: #fff; }
+  .band .inner { max-width: 1400px; margin: 0 auto; padding: 56px clamp(16px, 3vw, 40px); }
+  .kicker { font-size: 14px; letter-spacing: .14em; text-transform: uppercase; color: #f7c56b; font-weight: 600; margin: 0 0 14px; }
+
+  /* ---- Hero: the helmet ---- */
+  .hero { background: linear-gradient(180deg, #10263a 0%, #1c2d44 45%, #3a3a4d 75%, #6a5157 100%); }
+  .hero .inner { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(300px, 1fr); gap: 32px; align-items: center; }
+  @media (max-width: 900px) { .hero .inner { grid-template-columns: 1fr; } }
+  .hero h1 { font-size: clamp(32px, 4vw, 54px); font-weight: 600; line-height: 1.1; margin: 0 0 30px; max-width: 18ch; }
+  .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 22px 28px; }
+  .features b { display: block; color: #f7c56b; font-size: 16px; margin-bottom: 4px; }
+  .features p { margin: 0; color: rgba(255, 255, 255, .85); font-size: 15.5px; line-height: 1.5; }
+  .helmet-svg { width: 100%; max-width: 520px; justify-self: center; overflow: visible; }
+  .led { transition: fill .8s; }
+  .led-glow { transition: fill .8s; animation: led 2.4s ease-in-out infinite; transform-origin: center; transform-box: fill-box; }
+  @keyframes led { 0%, 100% { opacity: .35; } 50% { opacity: .9; } }
+  .led-note { text-align: center; color: rgba(255, 255, 255, .8); font-size: 13.5px; margin-top: 6px; }
+
+  /* ---- Three states ---- */
+  .section { margin-top: 56px; }
+  .section h2 { font-size: clamp(26px, 2.6vw, 36px); font-weight: 600; margin: 0 0 6px; }
+  .section .lede { color: var(--text-2); font-size: 17px; margin: 0 0 22px; }
+  .state { display: grid; grid-template-columns: auto minmax(0, 1.3fr) minmax(0, 1fr) auto; gap: 18px 26px; align-items: center; padding: 20px 24px; margin-bottom: 14px; }
+  @media (max-width: 800px) { .state { grid-template-columns: auto 1fr; } .state .pattern, .state .live-count { grid-column: 2; } }
+  .orb { width: 74px; height: 74px; border-radius: 50%; position: relative; }
+  .orb::before { content: ""; position: absolute; inset: 10px; border-radius: 50%; background: var(--c); }
+  .orb { background: var(--halo); }
+  .s-steady { --c: var(--sage); --halo: var(--sage-soft); }
+  .s-water { --c: var(--sun); --halo: var(--sun-soft); }
+  .s-shade { --c: var(--coral); --halo: var(--coral-soft); border-color: rgba(238, 90, 75, .35); }
+  .state h3 { margin: 0; font-size: 24px; font-weight: 600; }
+  .state p { margin: 2px 0 0; color: var(--text-2); font-size: 16px; }
+  .pattern .pulses { display: flex; gap: 8px; align-items: center; height: 18px; }
+  .pattern .pulses i { height: 16px; border-radius: 5px; background: var(--c); display: block; }
+  .pattern .pulses i.long { width: 64px; } .pattern .pulses i.short { width: 18px; } .pattern .pulses i.gap { width: 14px; background: none; }
+  .pattern .pulses i.silent { width: 170px; background: #e7dfd1; }
+  .pattern small { display: block; color: var(--text-2); font-size: 14px; margin-top: 8px; }
+  .live-count { text-align: right; min-width: 120px; }
+  .live-count b { font-family: var(--font-head); font-size: 38px; font-weight: 600; display: block; line-height: 1; }
+  .live-count span { color: var(--text-2); font-size: 13.5px; }
+  .notes { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 22px; }
+  @media (max-width: 800px) { .notes { grid-template-columns: 1fr; } }
+  .note-box { background: var(--sun-soft); border: 1px solid #f1dcb5; border-radius: 16px; padding: 18px 22px; font-size: 16px; color: var(--text); }
+
+  /* ---- How it connects (navy band) ---- */
+  .connects { background: var(--navy); margin-top: 64px; }
+  .connects .top { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(280px, 1fr); gap: 24px; align-items: end; margin-bottom: 34px; }
+  @media (max-width: 900px) { .connects .top { grid-template-columns: 1fr; } }
+  .connects h2 { font-size: clamp(30px, 3.6vw, 50px); font-weight: 600; margin: 0; }
+  .connects .top p { color: rgba(255, 255, 255, .85); font-size: 17px; margin: 0; }
+  .flow { display: grid; grid-template-columns: minmax(0, 1fr) 120px minmax(0, 1fr) 120px minmax(0, 1fr) 120px; gap: 0; align-items: stretch; }
+  @media (max-width: 1100px) { .flow { grid-template-columns: 1fr; gap: 10px; } .flow .link { transform: rotate(90deg); height: 80px; } }
+  .node { background: #1f3a52; border-radius: 22px; padding: 24px 26px; }
+  .node.cloud { background: #f4efe6; color: var(--navy); }
+  .node .where { font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: #f7c56b; font-weight: 600; }
+  .node.cloud .where { color: var(--gold-text); }
+  .node h3 { font-size: 25px; font-weight: 600; margin: 6px 0 10px; }
+  .node p { margin: 0; font-size: 15.5px; line-height: 1.55; color: rgba(255, 255, 255, .85); }
+  .node.cloud p { color: var(--text-2); }
+  .node .live { margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255, 255, 255, .14); font-size: 14px; color: #c9ecd0; font-weight: 600; }
+  .node.cloud .live { border-color: var(--line); color: var(--sage-text); }
+  .link { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; font-size: 13.5px; text-align: center; color: rgba(255, 255, 255, .8); }
+  .link b { color: #fff; font-size: 14.5px; }
+  .people { margin-top: 16px; }
+  .back { margin-top: 20px; display: flex; gap: 14px; align-items: center; padding: 16px 22px; border-radius: 16px; background: #2a3442; border: 1px solid #4c4a52; font-size: 16.5px; }
+  .back svg { flex: none; }
+  .facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-top: 30px; }
+  @media (max-width: 900px) { .facts { grid-template-columns: 1fr; } }
+  .facts p { margin: 0; padding-top: 16px; border-top: 1px solid rgba(255, 255, 255, .16); color: rgba(255, 255, 255, .85); font-size: 15.5px; line-height: 1.55; }
+  .facts b { color: #fff; }
+
+  /* ---- Prototype + next ---- */
+  .proto { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; }
+  .proto .card h3 { margin: 0 0 6px; font-size: 19px; }
+  .proto .card p { margin: 0; color: var(--text-2); font-size: 15px; line-height: 1.55; }
+  .tagline { display: inline-block; font-size: 12.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; padding: 3px 9px; border-radius: 999px; margin-bottom: 10px; }
+  .t-real { background: var(--sage-soft); color: var(--sage-text); }
+  .t-sim { background: var(--sun-soft); color: var(--gold-text); }
+  .next { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  @media (max-width: 800px) { .next { grid-template-columns: 1fr; } }
+  .next a { text-decoration: none; display: block; transition: border-color .2s, transform .2s; }
+  .next a:hover { border-color: var(--navy); transform: translateY(-2px); }
+  .next h3 { margin: 0 0 6px; font-size: 20px; font-weight: 600; }
+  .next p { margin: 0; color: var(--text-2); }
+</style>
+</head>
+<body>
+<header id="rs-header"></header>
+
+<!-- ======================= The device ======================= -->
+<section class="band hero" aria-labelledby="hero-title">
+  <div class="inner">
+    <div>
+      <p class="kicker">The device</p>
+      <h1 id="hero-title">A safety helmet that feels the heat before you do.</h1>
+      <div class="features">
+        <div><b>1 · Solar strip</b><p>Thin panel on the shell keeps it charged all shift. <span id="f-battery"></span></p></div>
+        <div><b>2 · Forehead sensor pad</b><p>Soft pad in the sweatband reads heart rate and skin temperature.</p></div>
+        <div><b>3 · Motion + vibration</b><p>Tracks workload and buzzes alert patterns you feel, not read.</p></div>
+        <div><b>4 · Brim LED + button</b><p>A glow at the edge of vision; one press to acknowledge, hold for help.</p></div>
+      </div>
+    </div>
+    <div>
+      <svg class="helmet-svg" viewBox="0 0 520 300" role="img" aria-label="Diagram of the Resilia helmet with its four parts numbered">
+        <!-- shell -->
+        <path d="M110 220 C110 120 180 70 270 70 C360 70 430 120 430 220 Z" fill="#f2a83c"/>
+        <path d="M134 214 C138 140 196 98 270 98 C344 98 402 140 406 214" fill="none" stroke="#d98a24" stroke-width="3" opacity=".7"/>
+        <!-- 1 solar strip -->
+        <g fill="#2f5068">
+          <circle cx="196" cy="88" r="11"/><circle cx="214" cy="80" r="11"/><circle cx="232" cy="75" r="11"/><circle cx="251" cy="72" r="11"/>
+          <circle cx="270" cy="71" r="11"/><circle cx="289" cy="72" r="11"/><circle cx="308" cy="75" r="11"/><circle cx="326" cy="80" r="11"/><circle cx="344" cy="88" r="11"/>
+        </g>
+        <!-- sweatband -->
+        <line x1="140" y1="205" x2="400" y2="205" stroke="#fff" stroke-width="3" stroke-dasharray="8 6" opacity=".85"/>
+        <!-- 3 motion module -->
+        <rect x="216" y="196" width="34" height="18" rx="5" fill="#10283a"/>
+        <!-- 2 sensor pad -->
+        <rect x="320" y="194" width="50" height="22" rx="11" fill="#f07a3a"/>
+        <!-- brim -->
+        <path d="M86 218 H452 Q470 218 470 232 Q470 244 452 244 H96 Q80 244 80 232 Q80 218 86 218 Z" fill="#e39a32"/>
+        <!-- 4 brim LED (glows the crew's most urgent state, live) -->
+        <circle class="led-glow" id="led-glow" cx="462" cy="231" r="20" fill="#6fa37b"/>
+        <circle class="led" id="led" cx="462" cy="231" r="8" fill="#6fa37b"/>
+        <!-- callouts -->
+        <g font-family="Space Grotesk, sans-serif" font-weight="700" font-size="16" text-anchor="middle">
+          <circle cx="270" cy="34" r="16" fill="#fff"/><text x="270" y="40" fill="#10283a">1</text>
+          <circle cx="345" cy="160" r="16" fill="#fff"/><text x="345" y="166" fill="#10283a">2</text>
+          <circle cx="233" cy="160" r="16" fill="#fff"/><text x="233" y="166" fill="#10283a">3</text>
+          <circle cx="490" cy="196" r="16" fill="#fff"/><text x="490" y="202" fill="#10283a">4</text>
+        </g>
+      </svg>
+      <div class="led-note" id="led-note">The brim light shows the crew's most urgent state, live.</div>
+    </div>
+  </div>
+</section>
+
+<main class="wrap">
+  <!-- ======================= Three states ======================= -->
+  <section class="section" aria-labelledby="states-title">
+    <h2 id="states-title">Three states. No phone, no reading.</h2>
+    <p class="lede">Each state has its own light and its own feel, so it works in any language, under any noise. Live counts come from the crew on shift now.</p>
+
+    <article class="card state s-steady">
+      <div class="orb" aria-hidden="true"></div>
+      <div><h3>Steady</h3><p>All good. The LED glows softly once a minute so the worker knows it is on.</p></div>
+      <div class="pattern"><div class="pulses"><i class="silent"></i></div><small>Silent</small></div>
+      <div class="live-count"><b class="num" id="n-steady">–</b><span>workers now</span></div>
+    </article>
+    <article class="card state s-water">
+      <div class="orb" aria-hidden="true"></div>
+      <div><h3>Drink water</h3><p>Heat is building. Hydrate now and slow the pace a little. (Dashboard status: Rising.)</p></div>
+      <div class="pattern"><div class="pulses"><i class="long"></i><i class="gap"></i><i class="long"></i></div><small>Two long buzzes · every 10 min</small></div>
+      <div class="live-count"><b class="num" id="n-water">–</b><span>workers now</span></div>
+    </article>
+    <article class="card state s-shade">
+      <div class="orb" aria-hidden="true"></div>
+      <div><h3>Go to shade</h3><p>Predicted heat stress soon, or help needed. Stop and rest in shade; water is on its way. (Dashboard status: Act now.)</p></div>
+      <div class="pattern"><div class="pulses"><i class="short"></i><i class="short"></i><i class="short"></i><i class="gap"></i><i class="short"></i><i class="short"></i><i class="short"></i></div><small>Three short · repeats until acknowledged</small></div>
+      <div class="live-count"><b class="num" id="n-shade">–</b><span>workers now</span></div>
+    </article>
+
+    <div class="notes">
+      <div class="note-box"><b>One button.</b> Press once: “going to shade”. Hold 3 s: call for help. <span id="sos-note"></span></div>
+      <div class="note-box"><b>Works offline.</b> Out of gateway range, the helmet stores readings and still alerts on its own.</div>
+    </div>
+  </section>
+</main>
+
+<!-- ======================= How it connects ======================= -->
+<section class="band connects" aria-labelledby="connects-title">
+  <div class="inner">
+    <div class="top">
+      <div><p class="kicker">How it connects</p><h2 id="connects-title">No WiFi on site. No phone per worker.</h2></div>
+      <p>Helmets talk to one nearby gateway; the gateway uses the mobile network to reach Resilia's AI.</p>
+    </div>
+
+    <div class="flow">
+      <div class="node">
+        <div class="where">On the worker</div><h3>Resilia helmet</h3>
+        <p>Heart rate, forehead temperature and movement, sampled every few seconds.</p>
+        <div class="live" id="live-helmets">&nbsp;</div>
+      </div>
+      <div class="link" aria-hidden="true"><b>Bluetooth LE</b>
+        <svg width="110" height="16" viewBox="0 0 110 16"><line x1="2" y1="8" x2="96" y2="8" stroke="#f5a53c" stroke-width="2.5" stroke-dasharray="7 6"/><path d="M94 2 L106 8 L94 14" fill="none" stroke="#f5a53c" stroke-width="2.5"/></svg>
+        tiny power use</div>
+      <div class="node">
+        <div class="where">On the site</div><h3>Site gateway</h3>
+        <p>A small solar receiver per work zone, or the supervisor's phone running Resilia.</p>
+        <div class="live" id="live-gateways">&nbsp;</div>
+      </div>
+      <div class="link" aria-hidden="true"><b>5G / LTE</b>
+        <svg width="110" height="16" viewBox="0 0 110 16"><line x1="2" y1="8" x2="96" y2="8" stroke="#f5a53c" stroke-width="2.5"/><path d="M94 2 L106 8 L94 14" fill="none" stroke="#f5a53c" stroke-width="2.5"/></svg>
+        mobile network</div>
+      <div class="node cloud">
+        <div class="where">In the cloud</div><h3>Resilia AI</h3>
+        <p>Adds live site weather (WBGT), predicts risk ~15 min ahead and decides what to do.</p>
+        <div class="live" id="live-ai">&nbsp;</div>
+      </div>
+      <div class="link" aria-hidden="true"><b>Alerts &amp; actions</b>
+        <svg width="110" height="16" viewBox="0 0 110 16"><line x1="2" y1="8" x2="96" y2="8" stroke="#f5a53c" stroke-width="2.5"/><path d="M94 2 L106 8 L94 14" fill="none" stroke="#f5a53c" stroke-width="2.5"/></svg>
+        seconds</div>
+    </div>
+
+    <div class="node people">
+      <div class="where">People</div><h3>Supervisor &amp; crew</h3>
+      <p>Dashboard updates, water runner dispatched, shade break scheduled.</p>
+      <div class="live" id="live-people">&nbsp;</div>
+    </div>
+
+    <div class="back">
+      <svg width="36" height="24" viewBox="0 0 36 24" aria-hidden="true"><path d="M32 3 V12 Q32 16 28 16 H6" fill="none" stroke="#f07a3a" stroke-width="2.6"/><path d="M11 10 L5 16 L11 22" fill="none" stroke="#f07a3a" stroke-width="2.6"/></svg>
+      <span><b>Back to the helmet:</b> the alert returns the same way and becomes a buzz pattern and brim light, within seconds.</span>
+    </div>
+
+    <div class="facts">
+      <p><b>Big site?</b> One gateway per work zone covers Bluetooth's range.</p>
+      <p><b>Signal lost?</b> The helmet keeps readings, alerts on its own, and syncs later.</p>
+      <p><b>Next version:</b> cellular IoT built into the helmet itself, so no gateway needed.</p>
+    </div>
+  </div>
+</section>
+
+<main class="wrap">
+  <!-- ======================= What's real ======================= -->
+  <section class="section" aria-labelledby="proto-title">
+    <h2 id="proto-title">What's real in this prototype</h2>
+    <p class="lede">The helmet above is the concept. For the hackathon, software stands in for the hardware.</p>
+    <div class="proto">
+      <div class="card"><span class="tagline t-sim">Simulated</span><h3>Helmets &amp; gateways</h3>
+        <p>A simulator plays 15 workers: heart rate, forehead temperature, movement, solar battery and occasional SOS presses, sent every 5 seconds through four simulated site gateways.</p></div>
+      <div class="card"><span class="tagline t-real">Working code</span><h3>Risk engine &amp; AI forecast</h3>
+        <p>Scores every worker from their readings and WBGT, and a machine-learning model (random forest) predicts heat stress up to 15 minutes ahead.</p></div>
+      <div class="card"><span class="tagline t-real">Working code</span><h3>AI agent &amp; dashboards</h3>
+        <p>The agent acts within set rules and asks before big steps; its breaks, water runs and crew pauses really change the simulated workers.</p></div>
+      <div class="card"><span class="tagline t-real">Live data</span><h3>Weather</h3>
+        <p>In “Live weather” mode, temperature, humidity and sunshine come from Open-Meteo for Dubai, Abu Dhabi, Sharjah and Al Ain. “Summer scenario” simulates a UAE summer day.</p></div>
+    </div>
+  </section>
+
+  <section class="section" aria-labelledby="next-title">
+    <h2 id="next-title">Where the helmet's readings go next</h2>
+    <div class="next" style="margin-top:18px">
+      <a class="card" href="/"><h3>Control room</h3><p>See every helmet live, and act on alerts and help calls.</p></a>
+      <a class="card" href="/ai-agent.html"><h3>The AI agent</h3><p>See how a reading becomes a decision.</p></a>
+      <a class="card" href="/insights.html"><h3>Insights</h3><p>When and where heat risk peaks, and what to change.</p></a>
+    </div>
+  </section>
+
+  <footer class="rs-foot">Resilia hackathon prototype · concept device · not a certified safety product</footer>
+</main>
+
+<script src="/assets/resilia.js"></script>
+<script>
+(function () {
+  const R = window.Resilia;
+  const COLOR = { steady: "#6fa37b", rising: "#f5a53c", act: "#ee5a4b" };
+  const NAME = { steady: "Steady", rising: "Drink water", act: "Go to shade" };
+
+  function render() {
+    const s = R.state.scores;
+    if (!s) return;
+    const workers = R.workers();
+    const count = (k) => workers.filter((w) => w.status === k).length;
+    R.tween(document.getElementById("n-steady"), count("steady"));
+    R.tween(document.getElementById("n-water"), count("rising"));
+    R.tween(document.getElementById("n-shade"), count("act"));
+
+    // Brim LED shows the most urgent state on the crew right now.
+    const worst = count("act") ? "act" : count("rising") ? "rising" : "steady";
+    document.getElementById("led").setAttribute("fill", COLOR[worst]);
+    document.getElementById("led-glow").setAttribute("fill", COLOR[worst]);
+    document.getElementById("led-note").textContent =
+      `Live: the brim light shows “${NAME[worst]}”, the most urgent state on the crew right now.`;
+
+    const d = s.devices || {};
+    document.getElementById("f-battery").textContent = d.avg_battery_pct != null ? `Live crew average: ${d.avg_battery_pct}%.` : "";
+    const sos = workers.filter((w) => w.sos_pressed_at).length;
+    document.getElementById("sos-note").textContent = sos ? `Live: ${sos} help request${sos > 1 ? "s" : ""} open now.` : "";
+
+    document.getElementById("live-helmets").textContent =
+      `Live: ${d.connected ?? 0} of ${d.helmets ?? 0} helmets reporting · every 5 s${R.state.speed > 1 ? " of demo time" : ""}`;
+    document.getElementById("live-gateways").textContent =
+      `Live: ${(d.gateways || []).length} gateways · last sync ${d.last_sync_s ?? "?"} s ago`;
+    const fc = workers.filter((w) => w.forecast).length;
+    const ag = R.state.agent;
+    document.getElementById("live-ai").textContent =
+      `Live: ${fc} rising forecast${fc === 1 ? "" : "s"} now · ${ag ? ag.kpis.cases : 0} agent cases this shift`;
+    const actions = insights ? insights.kpis.interventions : "–";
+    document.getElementById("live-people").textContent =
+      `Live: ${actions} water runs & shade breaks this shift · ${ag ? ag.kpis.waiting : 0} decisions waiting for a supervisor`;
+  }
+
+  // Shift totals come from the Insights data (it counts every intervention).
+  let insights = null, lastFetch = 0;
+  async function fetchInsights() {
+    if (Date.now() - lastFetch < 5000) return;
+    lastFetch = Date.now();
+    try { const res = await fetch("/api/insights", { cache: "no-store" }); if (res.ok) insights = await res.json(); } catch {}
+  }
+
+  R.init({ page: "about", arc: false, onData: () => { render(); fetchInsights(); } });
+})();
+</script>
+</body>
+</html>
