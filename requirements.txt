@@ -1,3 +1,9 @@
 # Only needed for the AI risk forecast (train_model.py / predictor.py).
 # Everything else uses Python's built-in tools.
+# Pinned to the exact versions the saved model (models/risk_model.pkl) was
+# trained with, so it loads the same way on Render as on the laptop.
 scikit-learn==1.9.1
+numpy==2.4.6
+scipy==1.17.1
+joblib==1.6.0
+threadpoolctl==3.7.0

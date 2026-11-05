@@ -6,6 +6,8 @@ Start the whole prototype with one command:
                                         turn RED in about 40 seconds (same every time)
     python run_all.py --demo --share    ...and a temporary public VIEW-ONLY link
                                         (Cloudflare quick tunnel) for teammates' phones
+    python run_all.py --demo --loop 20  always-on demo: the day restarts every 20 min
+                                        (used on Render, see render.yaml)
 
 This launches these programs side by side:
   1. simulator.py         - fake wristbands sending readings every 5 s
@@ -19,7 +21,9 @@ Press Ctrl+C here to stop all of them.
 
 import argparse
 import json
+import os
 import re
+import signal
 import shutil
 import subprocess
 import sys
@@ -111,6 +115,9 @@ def main():
                         help="custom speed (e.g. 5); --demo uses 15")
     parser.add_argument("--share", action="store_true",
                         help="also create a temporary public view-only link (Cloudflare quick tunnel)")
+    parser.add_argument("--loop", type=float, default=None, metavar="MINUTES",
+                        help="restart the demo day every MINUTES real minutes (for an always-on "
+                             "public demo, so visitors always see the midday heat, never night)")
     args = parser.parse_args()
 
     cloudflared = None
@@ -134,42 +141,64 @@ def main():
     ]
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
-
-    # Start from a clean slate so old test readings don't mix in.
-    (DATA_DIR / "readings.jsonl").unlink(missing_ok=True)
     SHARE_URL_FILE.unlink(missing_ok=True)  # an old link is dead; don't show it
-    # Breaks / water / pauses use the simulated clock, which restarts each run.
-    for stale in ("controls.json", "agent_state.json", "insights.json", "day_history.json"):
-        (DATA_DIR / stale).unlink(missing_ok=True)
+    hosted = os.environ.get("RESILIA_PUBLIC") == "1"
+
+    # A host (e.g. Render) stops the service with SIGTERM: stop the programs cleanly too.
+    def on_terminate(*_):
+        raise KeyboardInterrupt
+    signal.signal(signal.SIGTERM, on_terminate)
+
+    def fresh_start():
+        """Start from a clean slate so old test readings don't mix in."""
+        (DATA_DIR / "readings.jsonl").unlink(missing_ok=True)
+        # Breaks / water / pauses use the simulated clock, which restarts each run.
+        for stale in ("controls.json", "agent_state.json", "insights.json", "day_history.json", "risk_scores.json"):
+            (DATA_DIR / stale).unlink(missing_ok=True)
+        if args.demo:
+            # W08 and W12 only turn RED in summer heat, so start the demo there.
+            # (You can still flip the switch on the dashboard.)
+            write_mode("offline")
+            # Each demo starts with an empty alert/action log. (Normal runs keep it.)
+            for log in ("alerts.jsonl", "actions.jsonl", "agent.jsonl"):
+                (DATA_DIR / log).unlink(missing_ok=True)
+
+    def start_all():
+        fresh_start()
+        started = []
+        for name, command in programs:
+            log_name = command[0].replace(".py", ".log")
+            # -u: write logs straight away, no buffering
+            started.append(start_program(name, [sys.executable, "-u", *command], log_name))
+            print(f"Started {name} (logs: data/logs/{log_name})", flush=True)
+            time.sleep(1)  # give each one a moment, so the engine has readings to score
+        return started
+
     if args.demo:
-        # W08 and W12 only turn RED in summer heat, so start the demo there.
-        # (You can still flip the switch on the dashboard.)
-        write_mode("offline")
-        # Each demo starts with an empty alert/action log. (Normal runs keep it.)
-        for log in ("alerts.jsonl", "actions.jsonl", "agent.jsonl"):
-            (DATA_DIR / log).unlink(missing_ok=True)
         print(f"DEMO MODE: {speed:g}x speed, summer scenario, seed {DEMO_SEED}.")
     elif speed != 1:
         print(f"Running at {speed:g}x speed.")
+    if args.loop:
+        print(f"The demo day restarts every {args.loop:g} minutes.")
 
     running = []
     tunnel = None
     history = None   # background history builder (optional)
     try:
-        for name, command in programs:
-            log_name = command[0].replace(".py", ".log")
-            # -u: write logs straight away, no buffering
-            running.append(start_program(name, [sys.executable, "-u", *command], log_name))
-            print(f"Started {name} (logs: data/logs/{log_name})")
-            time.sleep(1)  # give each one a moment, so the engine has readings to score
+        running = start_all()
+        cycle_started = time.time()
 
-        print("\nOpen http://localhost:8000 in your browser (full control on this laptop).")
+        if hosted:
+            print("\nHosted online: every visitor is view-only.", flush=True)
+        else:
+            print("\nOpen http://localhost:8000 in your browser (full control on this laptop).")
         print("The first scores appear after about 5 seconds. Press Ctrl+C to stop everything.")
 
         # Insights' "Past 30 days" view uses a simulated history (models/history_30d.json,
         # included in the project). Rebuild it in the background only if it's missing
         # or out of date; the demo doesn't wait for it.
-        if history_needed():
+        # (Never on a small hosted server: it uses several cores for minutes.)
+        if history_needed() and not hosted:
             history = start_program("30-day history", [sys.executable, "-u", "generate_history.py"], "history.log")
             print("\nBuilding the simulated 30-day history for Insights in the background "
                   "(about 3 minutes, one time only). Logs: data/logs/history.log")
@@ -188,7 +217,21 @@ def main():
             for program in running:
                 if program["proc"].poll() is not None:
                     print(f"! The {program['name']} stopped unexpectedly. Check data/logs/ for details.")
+                    if hosted:   # show why in the host's log, then stop (the host restarts us)
+                        print((LOG_DIR / program["log_name"]).read_text(encoding="utf-8", errors="ignore")[-3000:])
                     raise KeyboardInterrupt
+            # Always-on demo: start the day again before the sun goes down.
+            if args.loop and time.time() - cycle_started > args.loop * 60:
+                print("\nRestarting the demo day...", flush=True)
+                for program in running:
+                    stop(program)
+                for program in running:
+                    try:
+                        program["proc"].wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        program["proc"].kill()
+                running = start_all()
+                cycle_started = time.time()
             # The public link is optional: if it drops, keep the demo running
             # and try a fresh link (it will have a new address).
             if tunnel and tunnel["proc"].poll() is not None:

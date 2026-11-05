@@ -1,0 +1,23 @@
+# Render Blueprint: the whole Resilia demo as ONE free web service.
+#
+# run_all.py starts the simulator, risk engine and dashboard together, in demo
+# mode (15x speed, summer scenario). --loop 20 restarts the demo day every
+# 20 minutes, so visitors always see the midday heat, never night.
+# RESILIA_PUBLIC=1 makes the dashboard listen on 0.0.0.0 and Render's $PORT,
+# and makes EVERY visitor view-only (the public link is for judges).
+# No Cloudflare tunnel here: Render gives the service its own public link.
+services:
+  - type: web
+    name: resilia
+    runtime: python
+    plan: free
+    region: frankfurt          # closest Render region to the UAE
+    buildCommand: pip install -r requirements.txt
+    startCommand: python run_all.py --demo --loop 20
+    healthCheckPath: /
+    autoDeployTrigger: commit  # every push to GitHub redeploys
+    envVars:
+      - key: RESILIA_PUBLIC
+        value: "1"
+      - key: PYTHONUNBUFFERED
+        value: "1"

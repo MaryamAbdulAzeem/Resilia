@@ -17,6 +17,8 @@ It does three things:
 View-only mode: visitors coming through the public Cloudflare link can watch
 but not change anything (no action buttons, no weather switch). Only people
 using the dashboard on this laptop (http://localhost:8000) have full control.
+When hosted online (environment variable RESILIA_PUBLIC=1, set on Render),
+EVERY visitor is view-only and the server listens on 0.0.0.0 and $PORT.
 
 Run it with:  python dashboard_server.py
 Then open:    http://localhost:8000
@@ -53,6 +55,10 @@ DECISIONS = {"approve": "Approved the agent's request", "override": "Overrode th
 # Visitors can't remove them, and this server only accepts connections from
 # this computer, so a request WITHOUT them really is from this laptop.
 TUNNEL_HEADERS = ("Cf-Connecting-Ip", "Cf-Ray", "Cdn-Loop")
+
+# Hosted online (Render sets RESILIA_PUBLIC=1): the server is open to the
+# internet, so EVERY visitor is view-only, whatever headers they send.
+PUBLIC_HOSTING = os.environ.get("RESILIA_PUBLIC") == "1"
 
 # The only actions a supervisor can log, and how they read in the log.
 ACTIONS = {
@@ -193,8 +199,8 @@ def read_share_url():
 
 class DashboardHandler(SimpleHTTPRequestHandler):
     def is_public_visitor(self):
-        """True if this request came in through the public Cloudflare link."""
-        return any(h in self.headers for h in TUNNEL_HEADERS)
+        """True if this visitor must be view-only: hosted online, or via the public Cloudflare link."""
+        return PUBLIC_HOSTING or any(h in self.headers for h in TUNNEL_HEADERS)
 
     def do_GET(self):
         if self.path.startswith("/api/access"):
@@ -312,13 +318,18 @@ class DashboardHandler(SimpleHTTPRequestHandler):
 
 def main():
     parser = argparse.ArgumentParser(description="Serve the heat-stress dashboard.")
-    parser.add_argument("--port", type=int, default=8000)
+    # Hosted: the port the host gives us (Render sets PORT). Laptop: 8000.
+    default_port = int(os.environ.get("PORT", 8000)) if PUBLIC_HOSTING else 8000
+    parser.add_argument("--port", type=int, default=default_port)
     args = parser.parse_args()
 
     handler = partial(DashboardHandler, directory=str(DASHBOARD_DIR))
-    # 127.0.0.1 = only this computer can open it (safer on hackathon wifi).
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), handler)
-    print(f"Dashboard running at http://localhost:{args.port}  (Ctrl+C to stop)")
+    # Laptop: 127.0.0.1 = only this computer can open it (safer on hackathon wifi).
+    # Hosted: 0.0.0.0 so the host can route visitors in (everyone is view-only then).
+    host = os.environ.get("HOST", "0.0.0.0") if PUBLIC_HOSTING else "127.0.0.1"
+    server = ThreadingHTTPServer((host, args.port), handler)
+    print(f"Dashboard running on {host}:{args.port}" + (" (public, view-only for everyone)" if PUBLIC_HOSTING else
+                                                         f"  ->  http://localhost:{args.port}  (Ctrl+C to stop)"))
     try:
         server.serve_forever()
     except KeyboardInterrupt:
