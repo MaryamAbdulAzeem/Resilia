@@ -64,8 +64,8 @@ python run_all.py --demo
 
 Time runs 15x faster, the simulated clock starts at 11:30, the dashboard starts
 on the summer scenario, and the story is nearly the same every run: W02 presses
-SOS at ~20-30 seconds, and the AI agent catches most at-risk workers (like W08)
-early (see "AI agent" below).
+SOS at ~28 seconds, the AI agent steps in from the first minute, and W12 and W08
+usually still reach the danger zone at about 75–95 seconds (see "AI agent" below).
 Forecasts show both simulated minutes and real seconds. `--speed 5` gives a
 custom speed.
 
@@ -108,10 +108,10 @@ The agent's automatic steps count as handling a *predicted* alert, but RED and
 SOS alerts always need a person. Requests expire after 20 simulated minutes;
 after an override (or expiry) it won't ask the same crew again for 30 minutes.
 
-**Effect on the demo:** because the agent acts early, most workers (like W08)
-cool down before reaching the danger zone. W12 is predicted only about a minute
-ahead, so depending on timing it sometimes still turns RED. W02's SOS arrives
-at about 20-30 seconds.
+**Effect on the demo:** the agent acts from the first minute, so most at-risk
+workers cool down before the danger zone. The two most heat-sensitive workers
+(W12, W08) usually still reach it at about 75–95 seconds as midday heat builds,
+which shows the "despite early action" path. W02's SOS arrives at about 28 seconds.
 
 ## Insights (`insights.py`, page: Insights)
 
@@ -139,6 +139,18 @@ Two views, switched at the top of the page:
 The design's "emergencies avoided / AED saved" figures were left out: the
 prototype has no real basis for them. Next to "caught early", the page also shows
 how many danger-zone alerts came with no AI warning, so prevention isn't oversold.
+
+How the simulated day works: a worker's heat load is the air temperature
+**plus direct sun** (full sun counts like ~10 °C extra), so risk peaks around
+12:00–14:00 and eases in the late afternoon as the sun goes down, matching the
+sun arc in the header. Jobs differ in workload (road works and construction
+heaviest, delivery riders lightest). The agent sends **one water runner per
+site** (workers there join a run sent in the last 20 minutes), doesn't send the
+same worker water again within 90 minutes, and leaves at least 45 minutes
+between automatic shade breaks (unless the worker is in the danger zone): about
+30 runner trips a day across the four sites, ~3 water deliveries and ~4 short
+breaks per worker per day. (The AI model was trained before the sun was added;
+it still uses the same inputs.)
 
 Status note: **Rising** means real body signs of strain (raised heart rate or
 skin temperature). A predicted RED makes a worker **Act now**. After a predicted

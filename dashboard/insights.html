@@ -35,7 +35,7 @@
 
   /* ---- Heat-map ---- */
   .hm-wrap { overflow-x: auto; }
-  .hm { display: grid; grid-template-columns: 96px repeat(14, minmax(36px, 1fr)); gap: 6px; min-width: 680px; align-items: center; }
+  .hm { display: grid; grid-template-columns: 96px repeat(12, minmax(36px, 1fr)); gap: 6px; min-width: 620px; align-items: center; }
   .hm .hh { text-align: center; color: var(--text-2); font-size: 14px; }
   .hm .site { font-weight: 600; font-size: 15.5px; }
   .hm .site.sel { color: var(--navy); text-decoration: underline; text-underline-offset: 4px; }
@@ -216,6 +216,8 @@
           title="${esc(s)} ${h}:00 · ${pct(share)} of worker-minutes at risk (${c.at_risk} of ${c.minutes})${c.wbgt != null ? ` · avg WBGT ${c.wbgt} °C` : ""}">${pct(share)}</div>`;
       }
     }
+    // One column per hour in the data (06:00–17:00), so the grid always lines up.
+    document.getElementById("heatmap").style.gridTemplateColumns = `96px repeat(${ins.hours.length}, minmax(36px, 1fr))`;
     R.setHTML(document.getElementById("heatmap"), html);
     const span = hist ? `${fmtDate(ins.from)} – ${fmtDate(ins.to)}`
       : ins.first_sim ? `${R.hhmm(ins.first_sim)}–${R.hhmm(ins.last_sim)}` : "";

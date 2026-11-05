@@ -34,7 +34,7 @@ import simulator as sim
 from insights import ShiftStats
 from predictor import HISTORY_READINGS, load_predictor
 
-VERSION = 1                    # bump when the history logic changes (run_all regenerates)
+VERSION = 2                    # bump when the history logic changes (run_all regenerates)
 DAYS = 30
 SHIFT_START, SHIFT_END = 6, 18
 STEP_SECONDS = 5
@@ -148,7 +148,8 @@ def run_day(args):
                 on_break = sim.active_until(ctl.get("breaks"), w.worker_id, t)
                 w.update(air, on_break=on_break,
                          heavy_paused=sim.active_until(ctl.get("pauses"), w.site, t),
-                         hydrated=sim.active_until(ctl.get("water"), w.worker_id, t))
+                         hydrated=sim.active_until(ctl.get("water"), w.worker_id, t),
+                         sun_w_m2=sim.sun_w_m2(hour))
                 w.helmet_step(t, STEP_SECONDS)
                 r = w.reading()
                 r["timestamp"] = r["sim_time"] = t.isoformat(timespec="seconds")

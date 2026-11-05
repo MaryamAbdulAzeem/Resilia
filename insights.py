@@ -22,7 +22,15 @@ from pathlib import Path
 INSIGHTS_FILE = Path("data") / "insights.json"
 AT_RISK = ("rising", "act")
 BAN_START, BAN_END = 12.5, 15.0   # UAE midday outdoor work ban: 12:30-15:00 (mid-June to mid-September)
-HOURS = list(range(6, 20))        # heat-map columns: 06:00 ... 19:00
+HOURS = list(range(6, 18))        # heat-map columns: 06:00 ... 17:00 (shifts end at 18:00)
+# How each job's work reads in advice ("Move heavy road works in Al Ain ...").
+JOB_WORK = {
+    "road works": "heavy road works",
+    "construction": "heavy construction work",
+    "oil & gas site": "heavy oil & gas site work",
+    "landscaping": "landscaping work",
+    "delivery rider": "delivery rounds",
+}
 MIN_MINUTES_PER_CELL = 20         # a site-hour needs this many worker-minutes to count
 
 
@@ -100,8 +108,8 @@ class ShiftStats:
             self.worker_alerts[wid] += 1
             if etype == "sos":
                 self.worker_sos[wid] += 1
-        if wid and entry.get("action") in ("water", "dispatch_water"):
-            self.worker_water[wid] += 1
+        if wid and entry.get("action") in ("water", "water_join", "dispatch_water"):
+            self.worker_water[wid] += 1   # water reached this worker (own run or a shared one)
         if wid and entry.get("action") in ("short_break", "shade_break"):
             self.worker_breaks[wid] += 1
         if etype in ("alert", "sos"):
@@ -159,7 +167,9 @@ class ShiftStats:
         hours_seen = sorted({h for (_, h), c in self.cells.items() if c[0] >= MIN_MINUTES_PER_CELL})
         minutes_so_far = int((self.last_sim - self.first_sim).total_seconds() // 60) if self.first_sim else 0
 
-        # 1) Scheduling: the site and hour where risk is highest vs. its calmest hour.
+        # 1) Scheduling: at the riskiest site, compare its peak hour with the calm
+        #    hours BEFORE it, and suggest moving that site's riskiest job earlier.
+        #    (Only jobs actually done at that site are considered.)
         if len(hours_seen) >= 2:
             best = None
             for site in {s for s, _ in self.cells}:
@@ -167,17 +177,19 @@ class ShiftStats:
                 if len(shares) < 2:
                     continue
                 peak_h = max(shares, key=shares.get)
-                low_h = min(shares, key=shares.get)
+                before = {h: s for h, s in shares.items() if h < peak_h} or shares
+                low_h = min(before, key=before.get)
                 if best is None or shares[peak_h] > best[1]:
-                    best = (site, shares[peak_h], peak_h, shares[low_h], low_h)
+                    best = (site, shares[peak_h], peak_h, shares[low_h], low_h, shares)
             if best and best[1] > 0:
-                site, peak, peak_h, low, low_h = best
-                job = max((j for s, j in self.jobs if s == site),
-                          key=lambda j: self.share(self.jobs[(site, j)]) or 0, default="heavy")
-                ratio = f"{peak / low:.1f}× higher" if low > 0 else "far higher"
+                site, peak, peak_h, low, low_h, shares = best
+                site_jobs = [j for s, j in self.jobs if s == site]
+                job = max(site_jobs, key=lambda j: self.share(self.jobs[(site, j)]) or 0)
+                # The first hour where risk reaches at least half of the peak: the work should finish before it.
+                rise_h = next((h for h in sorted(shares) if h <= peak_h and shares[h] >= peak / 2), peak_h)
                 recs.append({"type": "Scheduling", "text":
-                    f"Move heavy {job} tasks in {site} away from {peak_h:02d}:00: {peak:.0%} of worker-time there was at risk, "
-                    f"{ratio} than at {low_h:02d}:00 ({low:.0%})."})
+                    f"Move {JOB_WORK.get(job, job + ' work')} in {site} to before {rise_h:02d}:00: the share of worker-time "
+                    f"at risk there rises from {low:.0%} at {low_h:02d}:00 to {peak:.0%} at {peak_h:02d}:00."})
         else:
             recs.append({"type": "Scheduling", "text":
                 f"Collecting data: scheduling advice appears once Resilia has seen two hours of the shift "
@@ -209,9 +221,10 @@ class ShiftStats:
             avg = sum(j["at_risk"] for j in jobs) / max(1, sum(j["minutes"] for j in jobs))
             top = jobs[0]
             if avg > 0 and top["share"] > avg * 1.2:
+                where = sorted(s for s, j in self.jobs if j == top["job"])
                 recs.append({"type": "Crews", "text":
-                    f"Give {top['job']} crews extra shade breaks: {top['share']:.0%} of their time was at risk, "
-                    f"{top['share'] / avg:.1f}× the crew average."})
+                    f"Give {top['job']} crews ({_join(where)}) extra shade breaks: {top['share']:.0%} of their time "
+                    f"was at risk, {top['share'] / avg:.1f}× the crew average."})
         return recs
 
     def _site_wbgt(self):

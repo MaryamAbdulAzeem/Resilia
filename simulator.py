@@ -66,7 +66,23 @@ ACTIVITY_CHANGES = {
 # --- Time of day (UAE summer) ---
 SUMMER_SUNRISE = 5.6   # hours: about 05:35
 SUMMER_SUNSET = 19.1   # about 19:05
-HOTTEST_HOUR = 15.0    # air is hottest mid-afternoon
+HOTTEST_HOUR = 13.5    # air is hottest early afternoon
+
+# How physically demanding each job usually is (1.0 = average). Heavier jobs
+# spend more time on heavy work and less resting.
+JOB_WORKLOAD = {
+    "road works": 1.25,
+    "construction": 1.2,
+    "oil & gas site": 1.05,
+    "landscaping": 1.0,
+    "delivery rider": 0.85,
+}
+
+# Direct sunshine adds to the heat a worker's body has to deal with. Full sun
+# (~950 W/m2) counts like about 10 degrees of extra air temperature, so the heat
+# load follows the sun: highest around midday, easing as the sun goes down.
+SUN_HEAT_PER_W_M2 = 1 / 90
+FELT_HEAT_START = 47.0   # "felt" heat (air + sun) at which strain starts to build
 
 # --- Helmet settings ---
 # Chance per reading that a worker holds the SOS button. Workers under more
@@ -86,7 +102,7 @@ device_rng = random.Random()
 
 def diurnal_offset(hour):
     """How much hotter (+) or cooler (-) than the site's base temperature it is at this hour."""
-    return 4 * math.cos(2 * math.pi * (hour - HOTTEST_HOUR) / 24) - 2
+    return 4 * math.cos(2 * math.pi * (hour - HOTTEST_HOUR) / 24) - 1
 
 
 def sun_w_m2(hour):
@@ -131,12 +147,16 @@ class Worker:
         self.sos_age_s = 0
         self.still_s = 0            # seconds the worker has stayed still after an SOS
 
-    def update(self, air_temp, on_break=False, heavy_paused=False, hydrated=False):
+    def update(self, air_temp, on_break=False, heavy_paused=False, hydrated=False, sun_w_m2=None):
         """
         Move the worker forward by one time step (one reading).
         on_break:     resting in the shade (a scheduled shade break)
         heavy_paused: the supervisor paused heavy work for this crew
         hydrated:     a water run arrived recently (heats up a bit more slowly)
+        sun_w_m2:     strength of the sunshine. When given, direct sun adds to the
+                      heat load, so risk follows the day: highest around midday and
+                      easing off as the sun goes down. (The AI model's training
+                      shifts leave it out and use air temperature only.)
         """
         if self.still_s > 0 or on_break:
             self.activity = "resting"  # called for help, or on a shade break
@@ -145,11 +165,16 @@ class Worker:
             if heavy_paused and self.activity == "heavy":
                 self.activity = "light"  # light tasks only while heavy work is paused
         if on_break:
-            air_temp -= 4  # shade: no direct sun, cooler surroundings
+            air_temp -= 4  # shade: cooler surroundings...
+            sun_w_m2 = 0 if sun_w_m2 is not None else None  # ...and no direct sun
 
-        # 1) Heat strain builds up when working hard in hot air and
-        #    goes down when resting. Hotter air = faster build-up.
-        heat_factor = max(0.0, (air_temp - 35) / 10)  # 0 at 35C, 1 at 45C
+        # 1) Heat strain builds up when working hard in the heat and goes down
+        #    when resting. More heat = faster build-up.
+        if sun_w_m2 is None:
+            heat_factor = max(0.0, (air_temp - 35) / 10)  # air only: 0 at 35C, 1 at 45C
+        else:
+            felt = air_temp + sun_w_m2 * SUN_HEAT_PER_W_M2         # air + direct sun
+            heat_factor = max(0.0, (felt - FELT_HEAT_START) / 10)  # ~0.9 at midday in full sun
         #    Workers with low heat tolerance heat up faster AND cool down slower.
         gain = ACTIVITY_HEAT_GAIN[self.activity]
         if gain > 0:
@@ -158,6 +183,10 @@ class Worker:
                 gain *= 0.8
         else:
             gain = gain * self.heat_tolerance
+        if sun_w_m2 is not None:
+            # As the heat eases (morning, late afternoon), the body sheds heat more
+            # easily, so strain built up at midday fades by the end of the day.
+            gain -= 0.03 * max(0.0, 1.0 - heat_factor)
         self.heat_strain = min(10.0, max(0.0, self.heat_strain + gain))
 
         # 2) Heart rate: resting + activity + extra from heat strain.
@@ -178,9 +207,12 @@ class Worker:
 
     def _pick_next_activity(self):
         options = ACTIVITY_CHANGES[self.activity]
+        # Heavier jobs lean towards heavy work and away from resting.
+        f = JOB_WORKLOAD.get(self.job, 1.0)
+        tilt = {"resting": 1 / f, "light": 1.0, "moderate": f ** 0.5, "heavy": f}
         self.activity = random.choices(
             population=list(options.keys()),
-            weights=list(options.values()),
+            weights=[w * tilt[a] for a, w in options.items()],
         )[0]
 
     def helmet_step(self, sim_time, step_seconds):
@@ -345,7 +377,8 @@ def main():
                 worker.update(air,
                               on_break=on_break,
                               heavy_paused=active_until(controls.get("pauses"), worker.site, sim_time),
-                              hydrated=active_until(controls.get("water"), worker.worker_id, sim_time))
+                              hydrated=active_until(controls.get("water"), worker.worker_id, sim_time),
+                              sun_w_m2=sun_w_m2(hour))
                 worker.helmet_step(sim_time, args.interval)
                 reading = worker.reading()
                 reading["air_temp_c"] = round(air, 1)

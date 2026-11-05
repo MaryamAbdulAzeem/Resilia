@@ -45,7 +45,10 @@ RULES = [
 AUTO = {r["key"] for r in RULES if r["mode"] == "auto"}
 
 BREAK_MIN = 15           # length of a short shade break
+BREAK_GAP_MIN = 45       # at least this long between automatic breaks (unless in the danger zone)
 WATER_MIN = 30           # how long a water run helps
+WATER_COOLDOWN_MIN = 90  # don't send the same worker water again within this time
+WATER_TRIP_MIN = 20      # a runner sent to a site in the last 20 min serves everyone there
 CHECK_AFTER_MIN = 10     # check the outcome this long after acting
 PROPOSAL_EXPIRES_MIN = 20
 OVERRIDE_COOLDOWN_MIN = 30   # after "keep working", don't ask again for this long
@@ -82,6 +85,9 @@ class Agent:
         self.started_sim = None
         self.danger_cases = set()        # case ids where the worker reached RED
         self.alert_case = {}             # alert_id -> case_id (each alert handled once)
+        self.last_water = {}             # worker -> when they last got water
+        self.site_trip = {}              # site -> when a water runner was last sent there
+        self.break_ends = {}             # worker -> when their last shade break ended
         self.listener = None             # called with every step / supervisor action (shift insights)
         self.act_delays = []             # real seconds from alert to the agent's first action
 
@@ -180,13 +186,26 @@ class Agent:
         if "buzz" in AUTO:
             self._step(case, now, "act", "Alerted the worker",
                        f"Helmet buzzed the “go to shade” pattern on {wid}'s helmet.", "buzz", aid)
-        if "water" in AUTO and not self._active(self.controls["water"], wid, now):
-            eta = ZONE_ETA.get(w.get("zone") or "B", 4)
+        recently = lambda when, minutes: when is not None and now - when < timedelta(minutes=minutes)
+        if "water" in AUTO and not recently(self.last_water.get(wid), WATER_COOLDOWN_MIN):
             self.controls["water"][wid] = iso(now + timedelta(minutes=WATER_MIN))
-            self._step(case, now, "act", "Dispatched water",
-                       f"Nearest runner assigned to Zone {w.get('zone') or '?'} · ETA {eta} min.", "water", aid)
-        if include_break and "short_break" in AUTO and not self._active(self.controls["breaks"], wid, now):
+            self.last_water[wid] = now
+            trip = self.site_trip.get(w["site"])
+            if recently(trip, WATER_TRIP_MIN):
+                # One runner serves the whole site: join the run that's already on its way.
+                self._step(case, now, "act", "Added to the water run",
+                           f"Joins the runner already sent to {w['site']} at {hhmm(trip)}.", "water_join", aid)
+            else:
+                self.site_trip[w["site"]] = now
+                eta = ZONE_ETA.get(w.get("zone") or "B", 4)
+                self._step(case, now, "act", "Dispatched water",
+                           f"Nearest runner assigned to Zone {w.get('zone') or '?'} · ETA {eta} min.", "water", aid)
+        # A short break, but not back-to-back: at least 45 min between automatic
+        # breaks, unless the worker is in the danger zone.
+        gap_ok = alert["kind"] == "red" or not recently(self.break_ends.get(wid), BREAK_GAP_MIN)
+        if include_break and gap_ok and "short_break" in AUTO and not self._active(self.controls["breaks"], wid, now):
             self.controls["breaks"][wid] = iso(now + timedelta(minutes=BREAK_MIN))
+            self.break_ends[wid] = now + timedelta(minutes=BREAK_MIN)
             self._step(case, now, "act", f"Scheduled a {BREAK_MIN}-min shade break",
                        f"Logged in the crew plan until {hhmm(now + timedelta(minutes=BREAK_MIN))} and shown to the supervisor.",
                        "short_break", aid)
