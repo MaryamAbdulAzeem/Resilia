@@ -12,9 +12,11 @@
   "use strict";
 
   const PAGES = [
-    { key: "control", label: "Control room", href: "/", ready: true },
+    { key: "home", label: "Home", href: "/", ready: true },
+    { key: "control", label: "Control room", href: "/control-room.html", ready: true },
     { key: "agent", label: "AI agent", href: "/ai-agent.html", ready: true },
     { key: "insights", label: "Insights", href: "/insights.html", ready: true },
+    { key: "workers", label: "Workers", href: "/workers.html", ready: true },
     { key: "about", label: "About", href: "/about.html", ready: true },
   ];
   const SITES = ["Dubai", "Abu Dhabi", "Sharjah", "Al Ain"];
@@ -363,7 +365,8 @@
         <a class="brand" href="/" aria-label="Resilia home">${LOGO}<span class="brand-name">Resilia</span></a>
         <nav class="nav" aria-label="Main">${nav}</nav>
         <div class="hdr-right">
-          <a class="hpill alerts" id="rs-alerts" href="/" hidden></a>
+          <a class="hpill alerts" id="rs-alerts" href="/control-room.html" hidden></a>
+          ${opts.cta ? `<a class="hpill cta" href="/control-room.html">Open control room</a>` : ""}
           <span class="hpill agent" id="rs-agent" hidden></span>
           <span class="hpill demo" id="rs-demo" hidden></span>
           <span class="hpill view" id="rs-view" hidden title="You're on the public link: you can watch, but actions are taken in the control room">👁 View only</span>

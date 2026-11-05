@@ -279,6 +279,9 @@ class Agent:
                            f"{w['avg_heart_rate_bpm']} bpm, status {status}. Case closed.")
                 case["status"] = "closed"
                 case["closed_sim"] = iso(now)
+                # Keep the heart-rate trail around this case (for the home page chart).
+                start = datetime.fromisoformat(case["opened_sim"]) - timedelta(minutes=10)
+                case["trail"] = [[hhmm(t), hr, skin] for t, hr, skin, _ in self.trail[case["worker_id"]] if t >= start]
                 self.open_case.pop(case["worker_id"], None)
 
     # ------------------------------------------------- asking a human first
@@ -439,6 +442,8 @@ class Agent:
             "proposals": self.proposals[-12:],
             "cases": cases[:20],
             "controls": self.controls,
+            # Each worker's last 40 simulated minutes: [time, heart rate, skin temp, activity].
+            "trails": {wid: [[hhmm(t), hr, skin, act] for t, hr, skin, act in pts] for wid, pts in self.trail.items()},
         }
 
 

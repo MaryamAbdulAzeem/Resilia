@@ -110,6 +110,8 @@ button.hpill { cursor: pointer; }
 /* Sunrise gold to sunset orange (no coral: that colour is kept for at-risk states). */
 .hdr-stripe { height: 6px; background: linear-gradient(90deg, #f7c56b 0%, #f5a53c 50%, #e8862a 100%); }
 .hpill.agent { color: #fff; }
+.hpill.cta { background: var(--sun); color: var(--navy); border-color: var(--sun); font-weight: 700; }
+.hpill.cta:hover { background: #f7b457; }
 .hpill.agent b { color: #ffd18a; font-weight: 700; }
 .agent-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--sun); box-shadow: 0 0 10px rgba(245, 165, 60, .8); }
 
