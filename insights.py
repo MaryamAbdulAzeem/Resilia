@@ -57,6 +57,8 @@ class ShiftStats:
         self.predicted_ids = set()
         self.escalated_ids = set()
         self.red_alerts = 0
+        self.red_warned = 0       # danger-zone alerts the AI had forecast in the 15 min before
+        self.red_unwarned = 0     # danger-zone alerts with no forecast at all
         self.interventions = 0
         self.site_of = {}
         self.per_worker = defaultdict(_pair)           # worker -> [minutes on shift, minutes at risk]
@@ -122,6 +124,10 @@ class ShiftStats:
                     self.warning_minutes.append(alert["minutes"])
             elif kind == "red":
                 self.red_alerts += 1
+                if entry.get("warned"):
+                    self.red_warned += 1     # the AI had forecast it (but no separate alert opened)
+                else:
+                    self.red_unwarned += 1   # came with no warning at all
         elif etype == "alert_escalated":
             self.escalated_ids.add(entry["alert_id"])
             self.red_alerts += 1
@@ -147,7 +153,7 @@ class ShiftStats:
         for name in ("alerts_by_hour", "interventions_by_hour", "alerts_by_day", "interventions_by_day",
                      "water_by_site", "worker_alerts", "worker_breaks", "worker_water", "worker_sos"):
             getattr(self, name).update(getattr(other, name))
-        for name in ("risk_in_ban", "risk_total", "red_alerts", "interventions"):
+        for name in ("risk_in_ban", "risk_total", "red_alerts", "red_warned", "red_unwarned", "interventions"):
             setattr(self, name, getattr(self, name) + getattr(other, name))
         self.warning_minutes.extend(other.warning_minutes)
         self.predicted_ids |= other.predicted_ids
@@ -244,8 +250,16 @@ class ShiftStats:
 
     def snapshot(self):
         sites = sorted({s for s, _ in self.cells})
+        # Heat-risk episodes = every AI warning + every danger-zone alert that came
+        # with no warning. "Caught early" = episodes stopped before the danger zone,
+        # so it already counts the unwarned ones (they were missed).
         predicted = len(self.predicted_ids)
-        caught = predicted - len(self.escalated_ids & self.predicted_ids)
+        escalated = len(self.escalated_ids & self.predicted_ids)
+        unwarned = self.red_unwarned
+        # Episodes: AI-warning alerts, plus danger-zone alerts (forecast or not).
+        episodes = predicted + self.red_warned + unwarned
+        caught = predicted - escalated
+        reached_despite_warning = escalated + self.red_warned
         return {
             "generated_at": datetime.now().isoformat(timespec="seconds"),
             "first_sim": self.first_sim.isoformat() if self.first_sim else None,
@@ -264,11 +278,14 @@ class ShiftStats:
                 "early_warnings": predicted,
                 "median_warning_minutes": round(statistics.median(self.warning_minutes)) if self.warning_minutes else None,
                 "interventions": self.interventions,
-                "caught_early_pct": round(100 * caught / predicted) if predicted else None,
+                "caught_early_pct": round(100 * caught / episodes) if episodes else None,
+                "episodes": episodes,
+                "caught_early": caught,
+                "reached_despite_warning": reached_despite_warning,
                 "danger_alerts": self.red_alerts,
                 # Danger-zone alerts that came with NO earlier AI warning (e.g. a sudden
                 # switch to heavy work in extreme heat). Shown so "caught early" isn't oversold.
-                "unwarned_danger": self.red_alerts - len(self.escalated_ids),
+                "unwarned_danger": unwarned,
                 "at_risk_share": round(self.risk_total / max(1, sum(c[0] for c in self.cells.values())), 3),
             },
             "recommendations": self.recommendations(),

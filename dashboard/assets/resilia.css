@@ -221,6 +221,23 @@ body.view-only .rs-switch button[aria-pressed="false"] { opacity: .5; }
 .empty { color: var(--muted); padding: 18px 0; }
 footer.rs-foot { color: var(--muted); font-size: 13px; text-align: center; margin-top: 36px; }
 
+/* Water drop on Dispatch water: falls onto the button and ripples (no sound). */
+.water-drop {
+  position: fixed; z-index: 1100; width: 14px; height: 14px; margin: -26px 0 0 -7px; pointer-events: none;
+  background: #4aa3df; border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, .8); animation: rs-drop 1s ease-in forwards;
+}
+.water-drop::after {
+  content: ""; position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px;
+  border-radius: 50%; border: 2px solid #4aa3df; opacity: 0; animation: rs-ripple 1s ease-out forwards;
+}
+@keyframes rs-drop {
+  0% { opacity: 0; transform: translateY(-14px) rotate(-45deg) scale(.6); }
+  25% { opacity: 1; }
+  60% { opacity: 1; transform: translateY(22px) rotate(-45deg) scale(1); }
+  100% { opacity: 0; transform: translateY(26px) rotate(-45deg) scale(.4); }
+}
+@keyframes rs-ripple { 0%, 55% { opacity: 0; transform: scale(1); } 65% { opacity: .9; } 100% { opacity: 0; transform: scale(5); } }
 @keyframes rs-ping { 0% { transform: scale(1); opacity: .8; } 100% { transform: scale(2.6); opacity: 0; } }
 @keyframes rs-soft { 0%, 100% { box-shadow: 0 0 0 rgba(245, 165, 60, 0); } 50% { box-shadow: 0 0 14px rgba(245, 165, 60, .5); } }
 @keyframes rs-fade { from { opacity: 0; transform: translate(-50%, 6px); } to { opacity: 1; transform: translate(-50%, 0); } }

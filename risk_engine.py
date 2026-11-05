@@ -38,11 +38,14 @@ SETTINGS_FILE = Path("data") / "settings.json"
 ALERTS_FILE = Path("data") / "alerts.jsonl"
 # An alert stays open until the worker has been calm (not RED, not predicted RED)
 # for this long. Stops one worker flickering RED/YELLOW from raising many alerts.
-CLEAR_AFTER_SIM_SECONDS = 120
+CLEAR_AFTER_SIM_SECONDS = 10 * 60   # one episode: brief dips out of risk don't close it
 # After a predicted alert clears, don't raise another PREDICTED alert for the
 # same worker for this long (RED and SOS alerts are never held back). Stops a
 # worker hovering at the forecast threshold from triggering alert after alert.
-PREDICTED_COOLDOWN_SIM_SECONDS = 15 * 60
+PREDICTED_COOLDOWN_SIM_SECONDS = 45 * 60
+# A forecast shows on the dashboard from 30% confidence, but only raises an
+# ALERT (and the agent's response) when the AI is at least this sure.
+PREDICTED_ALERT_MIN_PROBABILITY = 0.3
 
 # How many recent readings to average per worker.
 # 12 readings x 5 seconds = the last 1 minute. Averaging smooths out sensor noise.
@@ -352,6 +355,16 @@ def print_report(results):
     print(f"Summary: {counts['GREEN']} green, {counts['YELLOW']} yellow, {counts['RED']} red")
 
 
+def worker_weather(site_weather, latest_reading):
+    """
+    The weather a worker actually feels. On a shade break there's no direct sun,
+    so their WBGT is the shade WBGT (lower than the site's full-sun figure).
+    """
+    if latest_reading.get("on_break"):
+        return dict(site_weather, solar_w_m2=0)
+    return site_weather
+
+
 def crew_status(r):
     """
     The plain-language status shown to supervisors:
@@ -360,14 +373,16 @@ def crew_status(r):
       steady "Steady"   - none of the above (it may still be a hot site: see WBGT)
     """
     f = r.get("forecast")
+    red_forecast = f and f["level"] == "RED"
     if r.get("sos_pressed_at"):
         return "act"
-    if r["level"] == "RED" or (f and f["level"] == "RED"):
+    # Act now: RED, or the AI is sure enough of RED to raise an alert.
+    if r["level"] == "RED" or (red_forecast and f["probability"] >= PREDICTED_ALERT_MIN_PROBABILITY):
         return "act"
-    # Rising = real body signs of strain. (A forecast of merely reaching YELLOW
-    # doesn't count: on a hot morning almost everyone gets one, which made the
-    # cool hours look riskier than midday.)
-    if r["hr_points"] + r["skin_points"] > 0:
+    # Rising = real body signs of strain, or a less certain RED forecast to watch.
+    # (A forecast of merely reaching YELLOW doesn't count: on a hot morning almost
+    # everyone gets one, which made the cool hours look riskier than midday.)
+    if red_forecast or r["hr_points"] + r["skin_points"] > 0:
         return "rising"
     return "steady"
 
@@ -451,7 +466,7 @@ def run_once(weather_cache, predictor=None, speed=1, settings_version=0, alert_m
         latest = history[-1]
         site = latest["site"]
         weather = weather_cache.get(site, latest.get("air_temp_c", 40.0), sim_hour)
-        result = score_worker(history[-WINDOW:], weather)
+        result = score_worker(history[-WINDOW:], worker_weather(weather, latest))
         result["lat"], result["lon"] = SITE_COORDS.get(site, (None, None))
 
         # Helmet details from the latest reading.
@@ -531,6 +546,7 @@ class AlertManager:
         self.calm_since = {}  # worker_id -> when they stopped being at risk
         self.sos = {}         # worker_id -> open SOS (help request from the helmet button)
         self.last_cleared = {}  # worker_id -> when their last alert cleared (for the cooldown)
+        self.last_red_forecast = {}  # worker_id -> when the AI last forecast RED for them
 
     def update_sos(self, r, now):
         """Open an SOS alert when a helmet starts signalling, close it when it stops."""
@@ -576,10 +592,15 @@ class AlertManager:
             wid = r["worker_id"]
             self.update_sos(r, now)
             forecast = r.get("forecast")
+            if forecast and forecast["level"] == "RED":
+                self.last_red_forecast[wid] = now
             if r["level"] == "RED":
                 kind = "red"
             elif forecast and forecast["level"] == "RED":
-                kind = "predicted_red"
+                # Keep an open predicted alert going at any confidence, but only
+                # OPEN a new one when the AI is sure enough.
+                sure = forecast["probability"] >= PREDICTED_ALERT_MIN_PROBABILITY
+                kind = "predicted_red" if (sure or wid in self.active) else None
             else:
                 kind = None
 
@@ -601,6 +622,10 @@ class AlertManager:
                         "started_sim": sim_time,
                         "minutes": forecast["minutes"] if forecast and kind == "predicted_red" else None,
                     }
+                    if kind == "red":
+                        # Was this danger zone forecast? (the AI showed RED for this
+                        # worker in the 15 minutes before, even without its own alert)
+                        alert["warned"] = (now - self.last_red_forecast.get(wid, float("-inf"))) * factor <= 15 * 60
                     self.active[wid] = alert
                     self._log("alert", alert, self._message(r, kind))
                 elif kind == "red" and alert["kind"] == "predicted_red":
@@ -645,6 +670,7 @@ class AlertManager:
             "alert_id": alert["alert_id"],
             "worker_id": alert["worker_id"],
             "kind": alert["kind"],
+            "warned": alert.get("warned"),   # danger-zone alerts: was it forecast first?
             "message": message,
         }
         print(f"  ALERT LOG: {event_type}: {message}")

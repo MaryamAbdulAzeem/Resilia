@@ -216,7 +216,11 @@
   document.addEventListener("click", (event) => {
     const btn = event.target.closest("button[data-action]");
     if (!btn || btn.disabled) return;
-    R.postAction(btn.dataset.worker, btn.dataset.action, btn.dataset.alert || null);
+    const action = btn.dataset.action;
+    const rect = btn.getBoundingClientRect();   // remember where the button is (it may be redrawn)
+    R.postAction(btn.dataset.worker, action, btn.dataset.alert || null).then((entry) => {
+      if (entry && action === "dispatch_water") R.waterDrop(rect);
+    });
   });
 
   R.actionButton = (action, workerId, alertId, cls = "btn btn-outline", label) => {
@@ -235,100 +239,130 @@
   }
 
   // ------------------------------------------------------------------ sound
-  // Browsers block sound until the user clicks the page once.
-  let soundWanted = true;
+  // ONE plain tone, nothing musical: a single low, soft pulse.
+  //   - a worker becomes Act now (in danger, or the AI predicts danger): one pulse
+  //   - SOS help request: a double pulse, repeating every few seconds until a
+  //     supervisor responds. SOS sounds even when the alert tone is muted.
+  //   - nothing for rising, back to steady, or confirmed actions.
+  // Browsers block all sound until the page has been clicked or tapped once.
+  const TONE_HZ = 220;          // low
+  const PULSE_SECONDS = 0.16;   // short
+  const TONE_VOLUME = 0.09;     // soft
+  const SOS_REPEAT_MS = 4000;   // SOS double pulse every 4 seconds
+
+  let soundWanted = true;       // the act-now tone (SOS ignores this)
   try { soundWanted = localStorage.getItem("hs-sound") !== "off"; } catch {}
   let audio = null;
   let lockedAtPress = false;
-  R.soundReady = () => soundWanted && audio && audio.state === "running";
-  R.soundBlocked = () => soundWanted && !R.soundReady();
+  const audioRunning = () => !!audio && audio.state === "running";
+  R.audioRunning = audioRunning;                         // has the browser allowed sound yet?
+  R.soundReady = () => soundWanted && audioRunning();
 
   function unlockAudio() {
-    lockedAtPress = soundWanted && !R.soundReady();
-    if (!soundWanted) return;
+    lockedAtPress = !audioRunning();
+    // Always unlock (even when the tone is muted): SOS must still be able to sound.
     try {
       audio ||= new (window.AudioContext || window.webkitAudioContext)();
-      audio.resume().then(updateSoundButton);
+      audio.resume().then(() => { updateSoundButton(); R.emit(); });
     } catch {}
   }
   document.addEventListener("pointerdown", unlockAudio, { capture: true });
   document.addEventListener("keydown", unlockAudio, { capture: true });
 
-  // Gentle chime: a pure (sine) tone that fades in softly and rings out slowly,
-  // through a filter that takes the edge off. No harsh or high-pitched beeps.
-  function chime(freq, start, volume) {
+  // One short pulse of a plain, low sine tone, softened with a gentle fade in/out.
+  function pulse(start) {
     const osc = audio.createOscillator();
     const gain = audio.createGain();
     const soften = audio.createBiquadFilter();
     osc.type = "sine";
-    osc.frequency.value = freq;
+    osc.frequency.value = TONE_HZ;
     soften.type = "lowpass";
-    soften.frequency.value = 1800;
+    soften.frequency.value = 700;
     gain.gain.setValueAtTime(0.0001, start);
-    gain.gain.exponentialRampToValueAtTime(volume, start + 0.04);   // soft start
-    gain.gain.exponentialRampToValueAtTime(0.0001, start + 1.2);    // slow fade
+    gain.gain.linearRampToValueAtTime(TONE_VOLUME, start + 0.02);
+    gain.gain.setValueAtTime(TONE_VOLUME, start + PULSE_SECONDS - 0.04);
+    gain.gain.linearRampToValueAtTime(0.0001, start + PULSE_SECONDS);
     osc.connect(soften).connect(gain).connect(audio.destination);
     osc.start(start);
-    osc.stop(start + 1.3);
+    osc.stop(start + PULSE_SECONDS + 0.02);
   }
-
-  // Three calm sounds, still easy to tell apart (all below ~700 Hz, played once):
-  //   predicted RED: one soft note
-  //   RED:           two notes, rising
-  //   SOS:           three notes, rising (the most noticeable, still calm)
-  // Reminders for unhandled alerts play at a lower volume.
-  R.playAlert = (kind, reminder = false) => {
-    if (!R.soundReady()) return;
-    const t = audio.currentTime + 0.05;
-    const v = reminder ? 0.6 : 1;
-    if (kind === "sos") [392, 523, 659].forEach((f, i) => chime(f, t + i * 0.28, 0.13 * v));
-    else if (kind === "red") [440, 587].forEach((f, i) => chime(f, t + i * 0.3, 0.11 * v));
-    else chime(523, t, 0.08 * v);
+  R.playTone = (kind = "single") => {
+    if (!audioRunning()) return;
+    const t = audio.currentTime + 0.03;
+    pulse(t);
+    if (kind === "sos") pulse(t + 0.3);   // double pulse
   };
 
-  const heard = new Map();
-  let lastReminder = Date.now();
-  const REMINDER_MS = 60000;
-  const RANK = { sos: 3, red: 2, predicted_red: 1 };
-  function soundForAlerts() {
-    let toPlay = null;
-    for (const a of R.alerts()) {
-      if (R.isHandled(a)) { heard.set(a.alert_id, a.kind); continue; }
-      const h = heard.get(a.alert_id);
-      if (h !== a.kind && !(h === "red" && a.kind !== "sos")) {
-        heard.set(a.alert_id, a.kind);
-        if (!toPlay || RANK[a.kind] > RANK[toPlay]) toPlay = a.kind;
-      }
+  // Act-now tone: once, when a worker newly becomes Act now (whatever the site
+  // filter). Nothing on first load, for workers who already were.
+  let prevStatus = null;
+  function soundForChanges() {
+    const workers = (R.state.scores && R.state.scores.workers) || [];
+    const now = {};
+    let newlyAct = false;
+    for (const w of workers) {
+      now[w.worker_id] = w.status;
+      const becameAct = prevStatus && w.status === "act" && prevStatus[w.worker_id] !== "act";
+      if (becameAct && !w.sos_pressed_at) newlyAct = true;   // SOS has its own sound
     }
-    // Reminder for urgent alerts nobody has handled: once a minute, quieter.
-    const urgent = R.alerts().find((a) => (a.kind === "sos" || a.kind === "red") && !R.isHandled(a));
-    if (toPlay) { R.playAlert(toPlay); lastReminder = Date.now(); }
-    else if (urgent && Date.now() - lastReminder > REMINDER_MS) { R.playAlert(urgent.kind, true); lastReminder = Date.now(); }
+    prevStatus = now;
+    if (newlyAct && soundWanted) R.playTone("single");
+  }
+
+  // SOS: double pulse every few seconds while any help request is unanswered.
+  const openSOS = () => R.alerts().some((a) => a.kind === "sos" && !R.isHandled(a));
+  let sosHeard = new Set();
+  function soundForSOS() {
+    const fresh = R.alerts().filter((a) => a.kind === "sos" && !R.isHandled(a) && !sosHeard.has(a.alert_id));
+    fresh.forEach((a) => sosHeard.add(a.alert_id));
+    if (fresh.length) R.playTone("sos");   // straight away for a new one; then the timer repeats it
+  }
+  setInterval(() => { if (openSOS()) R.playTone("sos"); }, SOS_REPEAT_MS);
+
+  function soundForAlerts() {
+    soundForChanges();
+    soundForSOS();
   }
 
   function updateSoundButton() {
     const btn = document.getElementById("rs-sound");
     if (!btn) return;
-    const locked = soundWanted && !R.soundReady();
-    btn.textContent = !soundWanted ? "🔕 Alert sound off · tap to turn on" : locked ? "🔔 Tap to allow alert sound" : "🔔 Alert sound on · tap to mute";
-    btn.classList.toggle("locked", locked);
+    const blocked = !audioRunning();
+    btn.textContent = blocked ? "🔔 Tap to allow sound (needed for SOS alarms)"
+      : soundWanted ? "🔔 Alert tone on · tap to mute (SOS always sounds)"
+      : "🔕 Alert tone muted · SOS still sounds · tap to turn on";
+    btn.classList.toggle("locked", blocked);
     btn.setAttribute("aria-pressed", String(soundWanted));
     const dot = document.getElementById("rs-menu-dot");
-    if (dot) dot.hidden = !locked;   // a small dot on the menu button while sound is blocked
+    if (dot) dot.hidden = !blocked;   // a small dot on the menu button while sound is blocked
   }
   function onSoundClick() {
-    if (lockedAtPress || (soundWanted && !R.soundReady())) {
+    if (lockedAtPress || !audioRunning()) {
       lockedAtPress = false;
-      unlockAudio();
-      setTimeout(() => R.playAlert("predicted_red"), 100);
+      unlockAudio();                                   // first tap: just allow sound
+      setTimeout(() => R.playTone("single"), 100);     // one pulse, so you know it works
     } else {
       soundWanted = !soundWanted;
       try { localStorage.setItem("hs-sound", soundWanted ? "on" : "off"); } catch {}
-      if (soundWanted) { unlockAudio(); setTimeout(() => R.playAlert("predicted_red"), 100); }
+      if (soundWanted) setTimeout(() => R.playTone("single"), 50);
     }
     updateSoundButton();
     R.emit();
   }
+
+  // ---------------------------------------------- water-drop animation
+  // Confirmation for Dispatch water: a small drop falls on the button (no sound).
+  // It's drawn on top of the page, so it survives the button being redrawn.
+  R.waterDrop = (rect) => {
+    if (!rect || REDUCE_MOTION) return;
+    const drop = document.createElement("span");
+    drop.className = "water-drop";
+    drop.setAttribute("aria-hidden", "true");
+    drop.style.left = `${rect.left + rect.width / 2}px`;
+    drop.style.top = `${rect.top}px`;
+    document.body.appendChild(drop);
+    setTimeout(() => drop.remove(), 1100);
+  };
 
   // --------------------------------------------------------------- header
   const LOGO = `<svg width="42" height="42" viewBox="0 0 42 42" aria-hidden="true">

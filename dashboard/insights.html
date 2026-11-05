@@ -291,10 +291,13 @@
     const perDay = (x) => (hist && ins.days ? ` · ≈${n(Math.round((x || 0) / ins.days))} a day` : "");
     document.querySelector("#k-warn + .kpi-sub").textContent = `AI forecasts before the danger zone${perDay(k.early_warnings)}`;
     document.querySelector("#k-int + .kpi-sub").textContent = `water runs & shade breaks${perDay(k.interventions)}`;
-    // Be upfront: danger-zone alerts that came with no earlier warning.
-    document.getElementById("k-caught-sub").textContent =
-      (k.early_warnings ? `of ${n(k.early_warnings)} AI warnings never reached the danger zone` : "of AI warnings never reached the danger zone") +
-      (k.unwarned_danger ? ` · ${n(k.unwarned_danger)} danger-zone alerts came with no warning` : "");
+    // One consistent total: every heat-risk episode (AI warnings + danger-zone
+    // alerts with no warning). The rest either got a warning but still reached
+    // the danger zone, or came with no warning at all.
+    document.getElementById("k-caught-sub").textContent = k.episodes
+      ? `of ${n(k.episodes)} heat-risk episodes were stopped before the danger zone · ` +
+        `${n(k.reached_despite_warning)} reached it despite a warning · ${n(k.unwarned_danger)} came with no warning`
+      : "of heat-risk episodes were stopped before the danger zone";
 
     // ---------- recommendations
     R.setHTML(document.getElementById("recs"), (ins.recommendations || []).map((r) =>
@@ -302,7 +305,17 @@
 
     // ---------- headline + eyebrow
     const peak = Object.entries(hourTotals).filter(([, [m]]) => m).map(([h, [m, r]]) => [h, r / m]).sort((a, b) => b[1] - a[1]);
-    const top = peak.length ? peak.filter(([, s]) => s >= peak[0][1] * 0.75).map(([h]) => String(h).padStart(2, "0")).sort() : [];
+    // Peak window: start at the riskiest hour and widen only to neighbouring
+    // hours that are nearly as risky (within 85%), so it names a narrow window.
+    const top = [];
+    if (peak.length) {
+      const share = Object.fromEntries(peak.map(([h, s]) => [Number(h), s]));
+      const best = Number(peak[0][0]), bar = peak[0][1] * 0.85;
+      let lo = best, hi = best;
+      while (share[lo - 1] != null && share[lo - 1] >= bar) lo--;
+      while (share[hi + 1] != null && share[hi + 1] >= bar) hi++;
+      for (let h = lo; h <= hi; h++) top.push(String(h).padStart(2, "0"));
+    }
     document.getElementById("headline").textContent =
       headline(top, peak.length, jobs[0] && jobs[0].share > avg * 1.2 ? jobs[0].job : null);
     R.setHTML(document.getElementById("eyebrow"), hist

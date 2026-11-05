@@ -147,12 +147,14 @@ class Worker:
         self.sos_age_s = 0
         self.still_s = 0            # seconds the worker has stayed still after an SOS
 
-    def update(self, air_temp, on_break=False, heavy_paused=False, hydrated=False, sun_w_m2=None):
+    def update(self, air_temp, on_break=False, heavy_paused=False, hydrated=False, sun_w_m2=None,
+               slowed=False):
         """
         Move the worker forward by one time step (one reading).
         on_break:     resting in the shade (a scheduled shade break)
         heavy_paused: the supervisor paused heavy work for this crew
         hydrated:     a water run arrived recently (heats up a bit more slowly)
+        slowed:       the helmet buzzed "go to shade": light tasks only for a while
         sun_w_m2:     strength of the sunshine. When given, direct sun adds to the
                       heat load, so risk follows the day: highest around midday and
                       easing off as the sun goes down. (The AI model's training
@@ -164,6 +166,8 @@ class Worker:
             self._pick_next_activity()
             if heavy_paused and self.activity == "heavy":
                 self.activity = "light"  # light tasks only while heavy work is paused
+            if slowed and self.activity in ("moderate", "heavy"):
+                self.activity = "light"  # eased off after the helmet's warning buzz
         if on_break:
             air_temp -= 4  # shade: cooler surroundings...
             sun_w_m2 = 0 if sun_w_m2 is not None else None  # ...and no direct sun
@@ -378,7 +382,8 @@ def main():
                               on_break=on_break,
                               heavy_paused=active_until(controls.get("pauses"), worker.site, sim_time),
                               hydrated=active_until(controls.get("water"), worker.worker_id, sim_time),
-                              sun_w_m2=sun_w_m2(hour))
+                              sun_w_m2=sun_w_m2(hour),
+                              slowed=active_until(controls.get("slow"), worker.worker_id, sim_time))
                 worker.helmet_step(sim_time, args.interval)
                 reading = worker.reading()
                 reading["air_temp_c"] = round(air, 1)

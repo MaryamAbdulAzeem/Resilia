@@ -153,9 +153,21 @@ breaks per worker per day. (The AI model was trained before the sun was added;
 it still uses the same inputs.)
 
 Status note: **Rising** means real body signs of strain (raised heart rate or
-skin temperature). A predicted RED makes a worker **Act now**. After a predicted
-alert clears, the same worker can't get another *predicted* alert for 15
-simulated minutes (RED and SOS alerts are never held back).
+skin temperature). A predicted RED makes a worker **Act now**. An alert stays open
+until the worker has been calm for 10 simulated minutes (so a worker hovering at
+the edge is one episode, not many), and after a predicted alert clears the same
+worker can't get another *predicted* alert for 45 minutes (RED and SOS alerts are
+never held back). The agent's response is stepped: a helmet buzz (the worker
+sticks to light tasks for 10 minutes) and water first; a shade break when danger
+is within 5 minutes or reached. On a shade break a worker is scored with the
+shade WBGT (no direct sun).
+
+**30-day totals** (per worker per day): about 2 early warnings and 3–4
+interventions (~1.7 water deliveries, ~2.1 short breaks). **Caught early** is
+the share of all heat-risk episodes (AI warnings plus danger-zone alerts that came
+with no warning) stopped before the danger zone, currently about 46%. In extreme
+midday heat a warning often can't prevent the danger zone, which is why the
+scheduling advice matters.
 
 ## Sharing a public link (view-only)
 
@@ -186,9 +198,13 @@ Also starts a free Cloudflare quick tunnel and prints a temporary public link
 - **Pop-ups** (bottom-right) for every unhandled alert, with **Dispatch water**,
   **Schedule shade break** and **Acknowledge**. Any of these handles the alert.
   After an escalation, the supervisor has to respond again.
-- **Sound:** three urgent beeps for RED, two softer beeps for predicted RED, and a
-  reminder every 30 s while a RED alert is unhandled. Browsers block sound until you
-  click the page once; the sound button in the header shows this.
+- **Sound:** one plain, low, soft tone (220 Hz, 0.16 s), nothing musical. A single
+  pulse when a worker becomes **Act now** (in the danger zone, or the AI predicts
+  it). **SOS**: a double pulse every 4 s until a supervisor responds, even when the
+  alert tone is muted (menu → sound). No sound for rising, back to steady, or
+  confirmed actions; Dispatch water shows a small water-drop animation instead.
+  Browsers block all sound until the page has been clicked once: the menu button
+  shows a dot, and the SOS banner a hint, until then.
 - **Card buttons:** every card has Dispatch water / Schedule shade break and shows
   the last action taken.
 - **Action log** at the bottom: alerts raised, escalated and cleared, plus every

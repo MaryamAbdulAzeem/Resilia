@@ -45,9 +45,12 @@ RULES = [
 AUTO = {r["key"] for r in RULES if r["mode"] == "auto"}
 
 BREAK_MIN = 15           # length of a short shade break
-BREAK_GAP_MIN = 45       # at least this long between automatic breaks (unless in the danger zone)
+BREAK_GAP_MIN = 60       # at least this long between automatic breaks...
+BREAK_GAP_RED_MIN = 30   # ...or this long if the worker is in the danger zone
+BREAK_IF_WITHIN_MIN = 5  # predicted danger this close (or actual danger) also gets a shade break
+SLOW_DOWN_MIN = 10       # after a helmet buzz the worker sticks to light tasks this long
 WATER_MIN = 30           # how long a water run helps
-WATER_COOLDOWN_MIN = 90  # don't send the same worker water again within this time
+WATER_COOLDOWN_MIN = 150 # don't send the same worker water again within this time
 WATER_TRIP_MIN = 20      # a runner sent to a site in the last 20 min serves everyone there
 CHECK_AFTER_MIN = 10     # check the outcome this long after acting
 PROPOSAL_EXPIRES_MIN = 20
@@ -70,7 +73,8 @@ class Agent:
         self.cases = {}               # case_id -> case
         self.open_case = {}           # worker_id -> open case_id
         self.proposals = []           # big steps waiting for (or decided by) a human
-        self.controls = {"breaks": {}, "water": {}, "pauses": {}}
+        # breaks / water / slow (after a buzz) per worker; pauses per site. Read by the simulator.
+        self.controls = {"breaks": {}, "water": {}, "pauses": {}, "slow": {}}
         self.trail = defaultdict(list)   # worker_id -> [(sim_dt, hr, skin, activity)], 1 per sim minute
         self.override_until = {}         # site -> sim time until which we won't ask again
         # Start after any actions already in the log (from earlier runs), so old
@@ -184,8 +188,11 @@ class Agent:
         """The automatic first response for an at-risk worker."""
         wid, aid = w["worker_id"], alert["alert_id"]
         if "buzz" in AUTO:
+            # The buzz tells the worker to ease off: light tasks only for a while.
+            self.controls["slow"][wid] = iso(now + timedelta(minutes=SLOW_DOWN_MIN))
             self._step(case, now, "act", "Alerted the worker",
-                       f"Helmet buzzed the “go to shade” pattern on {wid}'s helmet.", "buzz", aid)
+                       f"Helmet buzzed the “go to shade” pattern on {wid}'s helmet: light tasks only for {SLOW_DOWN_MIN} min.",
+                       "buzz", aid)
         recently = lambda when, minutes: when is not None and now - when < timedelta(minutes=minutes)
         if "water" in AUTO and not recently(self.last_water.get(wid), WATER_COOLDOWN_MIN):
             self.controls["water"][wid] = iso(now + timedelta(minutes=WATER_MIN))
@@ -200,9 +207,9 @@ class Agent:
                 eta = ZONE_ETA.get(w.get("zone") or "B", 4)
                 self._step(case, now, "act", "Dispatched water",
                            f"Nearest runner assigned to Zone {w.get('zone') or '?'} · ETA {eta} min.", "water", aid)
-        # A short break, but not back-to-back: at least 45 min between automatic
-        # breaks, unless the worker is in the danger zone.
-        gap_ok = alert["kind"] == "red" or not recently(self.break_ends.get(wid), BREAK_GAP_MIN)
+        # A short break, but not back-to-back: at least 60 min between automatic
+        # breaks (30 min if the worker is in the danger zone).
+        gap_ok = not recently(self.break_ends.get(wid), BREAK_GAP_RED_MIN if alert["kind"] == "red" else BREAK_GAP_MIN)
         if include_break and gap_ok and "short_break" in AUTO and not self._active(self.controls["breaks"], wid, now):
             self.controls["breaks"][wid] = iso(now + timedelta(minutes=BREAK_MIN))
             self.break_ends[wid] = now + timedelta(minutes=BREAK_MIN)
@@ -220,18 +227,22 @@ class Agent:
     def _handle_alert(self, alert, w, now):
         wid, aid, kind = w["worker_id"], alert["alert_id"], alert["kind"]
         first_time = aid not in self.alert_case
-        case = self.cases.get(self.alert_case.get(aid)) or self.cases.get(self.open_case.get(wid))
+        # The worker's open case comes first; otherwise the case this alert belonged to.
+        case = self.cases.get(self.open_case.get(wid)) or self.cases.get(self.alert_case.get(aid))
         new = False
         if case is None or case["status"] == "closed":
-            # An alert stays open briefly after its case closed: ignore it, unless
+            # An alert stays open for a while after its case closed: ignore it, unless
             # it has just turned RED (then it's a new situation).
             if not first_time and not (kind == "red" and case and not case["reached_red"]):
                 return
             case = self._open(w, now, kind)
             new = True
-        if first_time:
+        if first_time or new:
+            # Link the alert to this case (a re-opened alert moves to the new case,
+            # so it isn't treated as "closed case, new situation" again next time).
             self.alert_case[aid] = case["case_id"]
-            case["alert_ids"].append(aid)
+            if aid not in case["alert_ids"]:
+                case["alert_ids"].append(aid)
 
         if kind == "sos":
             if first_time:
@@ -259,7 +270,11 @@ class Agent:
                        f"Model confidence {round((f.get('probability') or alert.get('probability') or 0) * 100)}%. "
                        f"Site WBGT {w['wbgt_c']:.1f} °C is {above} the {w['wbgt_limit']:.0f} °C limit for {w['activity_level']} work.",
                        alert_id=alert["alert_id"])
-            self._act(case, w, now, alert)
+            # Stepped response: if danger is still 6+ minutes away, buzz and send
+            # water first; a shade break comes if it's close (<= 5 min) or the
+            # worker actually reaches the danger zone.
+            minutes = f.get("minutes", alert.get("minutes")) or 0
+            self._act(case, w, now, alert, include_break=minutes <= BREAK_IF_WITHIN_MIN)
             return
 
         if alert["kind"] == "red" and not case["reached_red"]:
@@ -398,6 +413,8 @@ class Agent:
                 self.controls["breaks"][wid] = iso(now + timedelta(minutes=BREAK_MIN))
             elif e.get("action") == "dispatch_water" and wid:
                 self.controls["water"][wid] = iso(now + timedelta(minutes=WATER_MIN))
+            elif e.get("action") == "buzz" and wid:
+                self.controls["slow"][wid] = iso(now + timedelta(minutes=SLOW_DOWN_MIN))
             elif e.get("action") in ("approve", "override") and e.get("proposal_id"):
                 self._decide(e["proposal_id"], e["action"], now)
 

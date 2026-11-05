@@ -276,6 +276,7 @@
         ${R.actionButton("send_first_aider", a.worker_id, a.alert_id, "btn btn-outline")}
         ${R.actionButton("call_999", a.worker_id, a.alert_id, "btn btn-danger")}
         ${R.state.viewOnly ? '<span class="hint">View-only link: the supervisor responds from the control room.</span>' : ""}
+        ${!R.audioRunning() && !handled ? '<span class="hint">🔇 Tap anywhere on the page to allow the SOS alarm sound.</span>' : ""}
       </div>
       ${sos.length > 1 ? `<div class="sos-more">+ ${sos.length - 1} more help request${sos.length > 2 ? "s" : ""}: ${sos.filter((x) => x !== a).map((x) => esc(x.worker_id)).join(", ")}</div>` : ""}`);
   }
@@ -314,13 +315,15 @@
     if (pred.length) parts.push(`${pred.length} predicted in ${Math.min(...pred.map(forecastMinutes))} min`);
     document.getElementById("k-act-sub").textContent = parts.join(" · ") || "nobody right now";
 
-    const d = s.devices || {};
-    R.tween(document.getElementById("k-conn"), d.connected ?? 0);
-    document.getElementById("k-total").textContent = `/${d.helmets ?? 0}`;
-    const gws = (d.gateways || []).length;
+    // Helmets & gateways for the SAME workers as "On shift" (the selected site, or all).
+    const ages = workers.map((w) => R.secondsSince(w.last_reading_at)).filter((a) => !isNaN(a));
+    const connected = ages.filter((a) => a < 30).length;
+    const gws = new Set(workers.map((w) => w.gateway).filter(Boolean)).size;
+    R.tween(document.getElementById("k-conn"), connected);
+    document.getElementById("k-total").textContent = `/${workers.length}`;
     document.getElementById("k-gw-label").textContent = `Site gateways · ${gws}`;
     document.getElementById("k-gw-sub").textContent =
-      `helmets connected · ${gws} gateway${gws === 1 ? "" : "s"} · synced ${d.last_sync_s ?? "?"} s ago`;
+      `helmets connected · ${gws} gateway${gws === 1 ? "" : "s"} · synced ${ages.length ? Math.min(...ages) : "?"} s ago`;
   }
 
   // ------------------------------------------------------- featured alert

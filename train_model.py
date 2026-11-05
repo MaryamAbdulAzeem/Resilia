@@ -48,24 +48,29 @@ def run_shift(shift_number):
     """Simulate one shift. Return training rows AND per-worker minute-by-minute timelines."""
     random.seed(shift_number)
     workers = simulator.create_workers()
-    air_temps = dict(simulator.SITES)
+    air_temps = dict(simulator.SITES)   # each site's base temperature (drifts slowly)
+    # Each practice shift starts at a different time of day, so the model learns
+    # how the heat (air temperature + sun) changes from morning to evening.
+    start_hour = random.uniform(6.0, 18.0 - SHIFT_MINUTES / 60)
 
     # Mirror how the real system runs: the risk engine either uses live
-    # weather or the offline summer scenario (simulator temperature, 30%, 800 W/m2).
+    # weather or the offline summer scenario (simulator temperature, 30%, sun for the hour).
     offline = random.random() < 0.5
     live_weather = {site: random_live_weather() for site in air_temps}
 
     readings = {w.worker_id: [] for w in workers}
     weather_log = {w.worker_id: [] for w in workers}
 
-    for _ in range(SHIFT_MINUTES * READINGS_PER_MINUTE):
+    for step in range(SHIFT_MINUTES * READINGS_PER_MINUTE):
+        hour = start_hour + step * 5 / 3600
+        sun = simulator.sun_w_m2(hour)
         simulator.update_air_temps(air_temps)
         for w in workers:
-            w.update(air_temps[w.site])
+            air = simulator.air_temp_at(air_temps[w.site], hour)
+            w.update(air, sun_w_m2=sun)   # same physics as the live simulator
             readings[w.worker_id].append(w.reading())
             if offline:
-                weather = {"air_temp_c": air_temps[w.site], "humidity_pct": 30,
-                           "solar_w_m2": 800, "source": "simulated"}
+                weather = {"air_temp_c": air, "humidity_pct": 30, "solar_w_m2": sun, "source": "simulated"}
             else:
                 weather = live_weather[w.site]
             weather_log[w.worker_id].append(weather)
