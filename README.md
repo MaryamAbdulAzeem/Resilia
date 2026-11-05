@@ -1,5 +1,9 @@
 # Resilia: Heat-Stress Monitoring Prototype
 
+Resilia is a solar-assisted, helmet-integrated heat-stress monitoring and alert
+system that protects outdoor construction workers from heat illness before it
+becomes an emergency, starting with the UAE’s outdoor workforce.
+
 Hackathon prototype for monitoring heat stress in outdoor workers in the UAE,
 using (simulated) Resilia smart helmets. Design mock-ups are in `designs/`.
 
