@@ -11,6 +11,7 @@ It does three things:
   GET  /api/log        -> alerts (from the risk engine) + supervisor actions, newest first
   GET  /api/access     -> is this visitor view-only? (+ the public link, for the laptop)
   GET  /api/agent      -> the AI agent's cases, timeline, rules and requests for approval
+  GET  /api/insights   -> shift heat-map, risk by job, alerts vs interventions, recommendations
   POST /api/decide     -> a supervisor approves or overrides one of the agent's requests
 
 View-only mode: visitors coming through the public Cloudflare link can watch
@@ -41,6 +42,7 @@ ACTIONS_FILE = BASE_DIR / "data" / "actions.jsonl"  # written here, when supervi
 SHARE_URL_FILE = BASE_DIR / "data" / "share_url.txt"  # written by run_all.py --share
 AGENT_LOG_FILE = BASE_DIR / "data" / "agent.jsonl"      # every step the AI agent took
 AGENT_STATE_FILE = BASE_DIR / "data" / "agent_state.json"
+INSIGHTS_FILE = BASE_DIR / "data" / "insights.json"
 PROPOSAL_ID = re.compile(r"^P\d{1,6}$")
 DECISIONS = {"approve": "Approved the agent's request", "override": "Overrode the agent's request"}
 
@@ -207,6 +209,11 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             return self.send_raw_json(body)
         if self.path.startswith("/api/mode"):
             return self.send_json(read_settings())
+        if self.path.startswith("/api/insights"):
+            try:
+                return self.send_raw_json(INSIGHTS_FILE.read_bytes())
+            except OSError:
+                return self.send_json({"error": "No insights yet. Is the risk engine running?"}, 503)
         if self.path.startswith("/api/agent"):
             try:
                 return self.send_raw_json(AGENT_STATE_FILE.read_bytes())

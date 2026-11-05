@@ -14,7 +14,7 @@
   const PAGES = [
     { key: "control", label: "Control room", href: "/", ready: true },
     { key: "agent", label: "AI agent", href: "/ai-agent.html", ready: true },
-    { key: "insights", label: "Insights", href: "/insights.html", ready: false },
+    { key: "insights", label: "Insights", href: "/insights.html", ready: true },
     { key: "about", label: "About", href: "/about.html", ready: false },
   ];
   const SITES = ["Dubai", "Abu Dhabi", "Sharjah", "Al Ain"];

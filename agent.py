@@ -82,6 +82,7 @@ class Agent:
         self.started_sim = None
         self.danger_cases = set()        # case ids where the worker reached RED
         self.alert_case = {}             # alert_id -> case_id (each alert handled once)
+        self.listener = None             # called with every step / supervisor action (shift insights)
         self.act_delays = []             # real seconds from alert to the agent's first action
 
     # ------------------------------------------------------------ main step
@@ -169,6 +170,8 @@ class Agent:
         with AGENT_LOG.open("a", encoding="utf-8") as f:
             f.write(json.dumps(entry) + "\n")
         print(f"  AGENT: {title} ({entry['worker_id'] or '-'})")
+        if self.listener:
+            self.listener(entry)
         return entry
 
     def _act(self, case, w, now, alert, include_break=True):
@@ -366,6 +369,8 @@ class Agent:
             return
         new, self.actions_seen = entries[self.actions_seen:], len(entries)
         for e in new:
+            if self.listener:
+                self.listener(e)
             wid = e.get("worker_id")
             if e.get("action") == "shade_break" and wid:
                 self.controls["breaks"][wid] = iso(now + timedelta(minutes=BREAK_MIN))

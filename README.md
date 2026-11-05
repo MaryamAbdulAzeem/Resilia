@@ -56,9 +56,9 @@ python run_all.py --demo
 ```
 
 Time runs 15x faster, the simulated clock starts at 11:30, the dashboard starts
-on the summer scenario, and the results are the same every run: W02 presses SOS
-at ~20-30 seconds and W12 turns RED at ~20 seconds; the AI agent catches most
-others (like W08) early (see "AI agent" below).
+on the summer scenario, and the story is nearly the same every run: W02 presses
+SOS at ~20-30 seconds, and the AI agent catches most at-risk workers (like W08)
+early (see "AI agent" below).
 Forecasts show both simulated minutes and real seconds. `--speed 5` gives a
 custom speed.
 
@@ -101,9 +101,25 @@ The agent's automatic steps count as handling a *predicted* alert, but RED and
 SOS alerts always need a person. Requests expire after 20 simulated minutes;
 after an override (or expiry) it won't ask the same crew again for 30 minutes.
 
-**Effect on the demo:** because the agent acts early, W08 usually cools down
-before reaching the danger zone. W12 (predicted only ~1 minute ahead) still turns
-RED at about 20 seconds, and W02's SOS arrives at about 20-30 seconds.
+**Effect on the demo:** because the agent acts early, most workers (like W08)
+cool down before reaching the danger zone. W12 is predicted only about a minute
+ahead, so depending on timing it sometimes still turns RED. W02's SOS arrives
+at about 20-30 seconds.
+
+## Insights (`insights.py`, page: Insights)
+
+Built live from the shift (written to `data/insights.json`):
+- **Heat-map** by site and hour: share of worker-minutes at Rising or Act now
+  (a cell needs 20 worker-minutes before it's shown; the current hour is outlined).
+- **Risk by job type**, for all sites or the site picked in the header.
+- **Alerts vs. interventions, by hour** of this shift.
+- **Recommendations** worked out from those numbers: scheduling (needs two hours
+  of data), water stations, how much risk falls outside the 12:30–15:00 midday
+  ban, and which crews need extra breaks. **Copy brief** copies them as text.
+
+The design's "emergencies avoided / AED saved" and weekly figures were left out:
+the prototype has no real basis for them. In demo mode one simulated hour takes
+about 4 real minutes, so the heat-map fills in as the demo runs.
 
 ## Sharing a public link (view-only)
 

@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Resilia · Insights</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="/assets/resilia.css">
+<style>
+  .title-row { align-items: flex-end; }
+  .page-title { max-width: 38ch; }
+  .kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; margin: 4px 0 24px; }
+  @media (max-width: 1000px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .kpi { padding: 22px 26px; }
+  .kpi-label { color: var(--text-2); font-size: 15px; }
+  .kpi-value { font-family: var(--font-head); font-size: 54px; font-weight: 600; line-height: 1.1; margin: 8px 0 4px; }
+  .kpi-value small { font-size: 26px; color: var(--text); font-weight: 600; margin-left: 4px; }
+  .kpi-sub { color: var(--text-2); font-size: 15px; }
+  .kpi.dark { background: var(--navy); color: #fff; border-color: var(--navy); }
+  .kpi.dark .kpi-label, .kpi.dark .kpi-sub, .kpi.dark small { color: rgba(255, 255, 255, .85); }
+
+  .row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr); gap: 24px; margin-bottom: 24px; align-items: start; }
+  .row.half { grid-template-columns: 1fr 1fr; }
+  @media (max-width: 1000px) { .row, .row.half { grid-template-columns: 1fr; } }
+
+  /* ---- Heat-map ---- */
+  .hm-wrap { overflow-x: auto; }
+  .hm { display: grid; grid-template-columns: 96px repeat(14, minmax(36px, 1fr)); gap: 6px; min-width: 680px; align-items: center; }
+  .hm .hh { text-align: center; color: var(--text-2); font-size: 14px; }
+  .hm .site { font-weight: 600; font-size: 15.5px; }
+  .hm .site.sel { color: var(--navy); text-decoration: underline; text-underline-offset: 4px; }
+  .cell { height: 52px; border-radius: 10px; display: grid; place-items: center; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; transition: background-color .6s; }
+  .cell.none { background: transparent; border: 1.5px dashed var(--line-2); color: var(--muted); font-weight: 400; }
+  .c0 { background: #ece4d6; color: var(--text-2); }
+  .c1 { background: #f7d9a6; color: var(--navy); }
+  .c2 { background: #f7b77a; color: var(--navy); }
+  .c3 { background: #f2894f; color: #fff; }
+  .c4 { background: #e8513f; color: #fff; }   /* highest risk: coral */
+  .cell.now { outline: 2px solid var(--navy); outline-offset: 2px; }
+  .legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 18px; color: var(--text-2); font-size: 14px; }
+  .legend i { width: 30px; height: 12px; border-radius: 4px; display: inline-block; }
+  .legend .none-key { border: 1.5px dashed var(--line-2); background: transparent; }
+
+  /* ---- Recommendations (dark) ---- */
+  .recs { background: var(--navy); color: #fff; border-radius: var(--radius); padding: 28px; box-shadow: var(--shadow); }
+  .recs h2 { margin: 0 0 18px; font-size: 24px; font-weight: 600; }
+  .rec { background: #1c3a52; border-radius: 14px; padding: 18px 20px; margin-bottom: 14px; }
+  .rec:last-child { margin-bottom: 0; }
+  .rec .k { font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: rgba(255, 255, 255, .75); margin-bottom: 6px; }
+  .rec p { margin: 0; font-size: 17px; line-height: 1.5; }
+  .recs .note { color: rgba(255, 255, 255, .6); font-size: 12.5px; margin: 14px 0 0; }
+
+  /* ---- Risk by job ---- */
+  .jobs { display: grid; grid-template-columns: 140px 1fr 52px; gap: 14px 16px; align-items: center; margin-top: 6px; }
+  .jobs .name { font-size: 16px; text-transform: capitalize; }
+  .bar { height: 12px; border-radius: 999px; background: #ece4d6; overflow: hidden; }
+  .bar i { display: block; height: 100%; border-radius: 999px; background: var(--navy); transition: width .8s cubic-bezier(.2, .8, .2, 1); }
+  .bar i.hi { background: var(--sun-deep); }
+  .jobs .pct { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .chart { width: 100%; height: 240px; display: block; }
+  .chart-legend { display: flex; gap: 18px; color: var(--text-2); font-size: 14px; margin-top: 8px; }
+  .chart-legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; margin-right: 6px; vertical-align: -1px; }
+</style>
+</head>
+<body>
+<header id="rs-header"></header>
+
+<main class="wrap">
+  <p class="eyebrow" id="eyebrow">For site managers, employers &amp; regulators</p>
+  <div class="title-row">
+    <h1 class="page-title" id="headline">Collecting this shift's data…</h1>
+    <button type="button" class="btn btn-outline" id="copy-brief">Copy brief</button>
+  </div>
+
+  <section class="kpis" aria-label="Shift summary">
+    <div class="card kpi"><div class="kpi-label">Early warnings issued</div><div class="kpi-value num" id="k-warn">–</div><div class="kpi-sub">AI forecasts before the danger zone</div></div>
+    <div class="card kpi"><div class="kpi-label">Median warning time</div><div class="kpi-value" id="k-lead">–</div><div class="kpi-sub">between AI alert and predicted danger</div></div>
+    <div class="card kpi"><div class="kpi-label">Interventions completed</div><div class="kpi-value num" id="k-int">–</div><div class="kpi-sub">water runs &amp; shade breaks</div></div>
+    <div class="card kpi dark"><div class="kpi-label">Caught early</div><div class="kpi-value" id="k-caught">–</div><div class="kpi-sub" id="k-caught-sub">of AI warnings never reached the danger zone</div></div>
+  </section>
+
+  <section class="row">
+    <article class="card">
+      <div class="card-head"><h2>When and where heat risk peaks</h2><span class="hint">Share of worker-minutes at rising or act-now risk</span></div>
+      <div class="hm-wrap"><div class="hm" id="heatmap" role="table" aria-label="Heat risk by site and hour"></div></div>
+      <div class="legend">Low
+        <i class="c0"></i><i class="c1"></i><i class="c2"></i><i class="c3"></i><i class="c4"></i> High
+        <span style="margin-left:14px"><i class="none-key"></i> not enough data yet</span>
+      </div>
+      <p class="hint" id="hm-note" style="margin:10px 0 0">&nbsp;</p>
+    </article>
+    <aside class="recs">
+      <h2>What the data suggests</h2>
+      <div id="recs"><div class="rec"><p>Waiting for data…</p></div></div>
+      <p class="note">Worked out from this shift's simulated helmets: illustrative, not field data.</p>
+    </aside>
+  </section>
+
+  <section class="row half">
+    <article class="card">
+      <div class="card-head"><h2>Risk by job type</h2><span class="hint" id="jobs-scope">All sites</span></div>
+      <div class="jobs" id="jobs"></div>
+      <p class="hint" style="margin:16px 0 0">Share of shift time spent at rising or act-now risk. Orange = above the crew average.</p>
+    </article>
+    <article class="card">
+      <div class="card-head"><h2>Alerts vs. interventions, by hour</h2><span class="hint">This shift</span></div>
+      <div id="by-hour"></div>
+      <div class="chart-legend"><span><i style="background:var(--coral)"></i>Heat &amp; SOS alerts</span><span><i style="background:var(--navy)"></i>Water runs &amp; shade breaks</span></div>
+    </article>
+  </section>
+
+  <footer class="rs-foot">Resilia hackathon prototype · insights are calculated live from the simulated shift · not field data</footer>
+</main>
+
+<script src="/assets/resilia.js"></script>
+<script>
+(function () {
+  const R = window.Resilia;
+  const { esc } = R;
+  let ins = null;
+  let lastFetch = 0;
+
+  async function fetchInsights() {
+    if (Date.now() - lastFetch < 2500) return;   // every few seconds is plenty
+    lastFetch = Date.now();
+    try {
+      const res = await fetch("/api/insights", { cache: "no-store" });
+      if (res.ok) ins = await res.json();
+    } catch {}
+    render();
+  }
+
+  const level = (share) => (share < 0.05 ? 0 : share < 0.15 ? 1 : share < 0.3 ? 2 : share < 0.5 ? 3 : 4);
+  const pct = (x) => `${Math.round(x * 100)}%`;
+
+  // Only name peak hours once there are at least two hours to compare.
+  function headline(peakHours, hoursSeen, topJob) {
+    if (!hoursSeen) return "Insights build up as the shift goes on.";
+    if (hoursSeen < 2) {
+      return topJob
+        ? `So far, heat risk is highest for ${topJob} crews. Peak hours show up as the shift goes on.`
+        : "So far, heat risk is spread evenly. Peak hours show up as the shift goes on.";
+    }
+    const last = Number(peakHours[peakHours.length - 1]) + 1;
+    const hrs = peakHours.length > 1 ? `${peakHours[0]}:00–${String(last).padStart(2, "0")}:00` : `${peakHours[0]}:00`;
+    return `Heat risk concentrates around ${hrs}${topJob ? ` and in ${topJob} crews` : ""}. Shift those, and fewer workers reach the danger zone.`;
+  }
+
+  function render() {
+    if (!ins) return;
+    const sel = R.state.site;
+    const hm = ins.heatmap || {};
+    const sites = R.SITES.filter((s) => hm[s]);
+    const minCell = ins.min_minutes_per_cell || 20;
+    const nowHour = ins.last_sim ? Number(ins.last_sim.slice(11, 13)) : null;
+
+    // ---------- heat-map
+    let html = `<div></div>${ins.hours.map((h) => `<div class="hh">${String(h).padStart(2, "0")}</div>`).join("")}`;
+    const hourTotals = {};
+    for (const s of sites) {
+      html += `<div class="site${sel === s ? " sel" : ""}" role="rowheader">${esc(s)}</div>`;
+      for (const h of ins.hours) {
+        const c = hm[s][String(h)];
+        if (!c || c.minutes < minCell) {
+          html += `<div class="cell none${h === nowHour ? " now" : ""}" title="${esc(s)} ${h}:00 · not enough data yet">·</div>`;
+          continue;
+        }
+        const share = c.at_risk / c.minutes;
+        (hourTotals[h] ||= [0, 0]);
+        hourTotals[h][0] += c.minutes; hourTotals[h][1] += c.at_risk;
+        html += `<div class="cell c${level(share)}${h === nowHour ? " now" : ""}" role="cell"
+          title="${esc(s)} ${h}:00 · ${pct(share)} of worker-minutes at risk (${c.at_risk} of ${c.minutes})${c.wbgt != null ? ` · avg WBGT ${c.wbgt} °C` : ""}">${pct(share)}</div>`;
+      }
+    }
+    R.setHTML(document.getElementById("heatmap"), html);
+    const span = ins.first_sim ? `${R.hhmm(ins.first_sim)}–${R.hhmm(ins.last_sim)}` : "";
+    document.getElementById("hm-note").textContent =
+      `Data so far: ${span} (simulated time). Cells fill in as the shift goes on; the outlined column is the current hour.` +
+      (R.state.speed > 1 ? ` At ${R.state.speed}× demo speed, one hour takes about ${Math.round(60 / R.state.speed)} real minutes.` : "");
+
+    // ---------- risk by job (selected site or all)
+    const jobAgg = {};
+    for (const s of sites) if (sel === "all" || sel === s) {
+      for (const j of (ins.jobs[s] || [])) {
+        (jobAgg[j.job] ||= [0, 0]);
+        jobAgg[j.job][0] += j.minutes; jobAgg[j.job][1] += j.at_risk;
+      }
+    }
+    const jobs = Object.entries(jobAgg).map(([job, [m, r]]) => ({ job, share: m ? r / m : 0 })).sort((a, b) => b.share - a.share);
+    const totalM = Object.values(jobAgg).reduce((a, [m]) => a + m, 0);
+    const avg = totalM ? Object.values(jobAgg).reduce((a, [, r]) => a + r, 0) / totalM : 0;
+    const maxShare = Math.max(0.01, ...jobs.map((j) => j.share));
+    document.getElementById("jobs-scope").textContent = sel === "all" ? "All sites" : sel;
+    R.setHTML(document.getElementById("jobs"), jobs.length ? jobs.map((j) => `
+      <span class="name">${esc(j.job)}</span>
+      <span class="bar" title="${esc(j.job)}: ${pct(j.share)} of shift time at risk"><i class="${j.share > avg ? "hi" : ""}" style="width:${(j.share / maxShare) * 100}%"></i></span>
+      <span class="pct">${pct(j.share)}</span>`).join("") : '<span class="empty" style="grid-column:1/-1">No data yet.</span>');
+
+    // ---------- alerts vs interventions by hour
+    const bh = ins.by_hour || {};
+    const hrs = Object.keys(bh).map(Number).sort((a, b) => a - b);
+    let chart = '<p class="empty">No alerts or interventions yet.</p>';
+    if (hrs.length) {
+      const all = []; for (let h = hrs[0]; h <= hrs[hrs.length - 1]; h++) all.push(h);
+      const max = Math.max(1, ...all.map((h) => Math.max((bh[h] || {}).alerts || 0, (bh[h] || {}).interventions || 0)));
+      const W = 600, H = 230, base = 200, gw = W / all.length, bw = Math.min(26, gw * 0.3);
+      const y = (v) => base - (v / max) * 170;
+      chart = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Alerts and interventions per hour">
+        <line x1="0" x2="${W}" y1="${base}" y2="${base}" stroke="#d9cdb9"/>
+        ${all.map((h, i) => {
+          const d = bh[h] || { alerts: 0, interventions: 0 };
+          const cx = gw * i + gw / 2;
+          return `<g>
+            <rect x="${cx - bw - 2}" y="${y(d.alerts)}" width="${bw}" height="${base - y(d.alerts)}" rx="4" fill="#ee5a4b"><title>${h}:00 · ${d.alerts} alerts</title></rect>
+            <rect x="${cx + 2}" y="${y(d.interventions)}" width="${bw}" height="${base - y(d.interventions)}" rx="4" fill="#10283a"><title>${h}:00 · ${d.interventions} interventions</title></rect>
+            <text x="${cx}" y="${base + 20}" text-anchor="middle" font-size="13" fill="#4d5b66">${String(h).padStart(2, "0")}:00</text>
+            ${d.alerts ? `<text x="${cx - bw / 2 - 2}" y="${y(d.alerts) - 6}" text-anchor="middle" font-size="12" fill="#4d5b66">${d.alerts}</text>` : ""}
+            ${d.interventions ? `<text x="${cx + bw / 2 + 2}" y="${y(d.interventions) - 6}" text-anchor="middle" font-size="12" fill="#4d5b66">${d.interventions}</text>` : ""}
+          </g>`;
+        }).join("")}</svg>`;
+    }
+    R.setHTML(document.getElementById("by-hour"), chart);
+
+    // ---------- KPIs
+    const k = ins.kpis || {};
+    R.tween(document.getElementById("k-warn"), k.early_warnings || 0);
+    R.setHTML(document.getElementById("k-lead"), k.median_warning_minutes == null ? "–" : `${k.median_warning_minutes}<small>min</small>`);
+    R.tween(document.getElementById("k-int"), k.interventions || 0);
+    R.setHTML(document.getElementById("k-caught"), k.caught_early_pct == null ? "–" : `${k.caught_early_pct}<small>%</small>`);
+    document.getElementById("k-caught-sub").textContent = k.early_warnings
+      ? `of ${k.early_warnings} AI warnings never reached the danger zone` : "of AI warnings never reached the danger zone";
+
+    // ---------- recommendations
+    R.setHTML(document.getElementById("recs"), (ins.recommendations || []).map((r) =>
+      `<div class="rec"><div class="k">${esc(r.type)}</div><p>${esc(r.text)}</p></div>`).join("") || '<div class="rec"><p>Waiting for data…</p></div>');
+
+    // ---------- headline + eyebrow
+    const peak = Object.entries(hourTotals).filter(([, [m]]) => m).map(([h, [m, r]]) => [h, r / m]).sort((a, b) => b[1] - a[1]);
+    const top = peak.length ? peak.filter(([, s]) => s >= peak[0][1] * 0.75).map(([h]) => String(h).padStart(2, "0")).sort() : [];
+    document.getElementById("headline").textContent =
+      headline(top, peak.length, jobs[0] && jobs[0].share > avg * 1.2 ? jobs[0].job : null);
+    R.setHTML(document.getElementById("eyebrow"),
+      `For site managers, employers &amp; regulators · ${R.state.speed > 1 ? "demo" : "simulated"} shift ${esc(span)}` +
+      (R.statusWarn ? ` · <span class="warn">${esc(R.statusText)}</span>` : ""));
+  }
+
+  document.getElementById("copy-brief").addEventListener("click", async () => {
+    if (!ins) return;
+    const k = ins.kpis || {};
+    const text = [
+      `Resilia shift brief (${R.hhmm(ins.first_sim)}–${R.hhmm(ins.last_sim)}, simulated data)`,
+      document.getElementById("headline").textContent,
+      "",
+      `Early warnings issued: ${k.early_warnings ?? 0} · median warning time: ${k.median_warning_minutes ?? "–"} min`,
+      `Interventions completed: ${k.interventions ?? 0} · caught early: ${k.caught_early_pct ?? "–"}%`,
+      "",
+      "What the data suggests:",
+      ...(ins.recommendations || []).map((r) => `- ${r.type}: ${r.text}`),
+    ].join("\n");
+    try { await navigator.clipboard.writeText(text); R.toast("✓ Brief copied. Paste it into an email or document."); }
+    catch { R.toast("Copying was blocked by the browser."); }
+  });
+
+  R.init({ page: "insights", arc: false, onData: () => { render(); fetchInsights(); } });
+})();
+</script>
+</body>
+</html>

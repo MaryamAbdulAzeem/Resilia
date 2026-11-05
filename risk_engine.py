@@ -27,6 +27,7 @@ from pathlib import Path
 
 import simulator  # for the simulated clock, time-of-day sun, and UAE time zone
 from agent import Agent
+from insights import ShiftStats
 from predictor import HISTORY_READINGS, READINGS_PER_MINUTE, load_predictor
 
 READINGS_FILE = Path("data") / "readings.jsonl"
@@ -421,7 +422,7 @@ def device_summary(workers, latest_readings):
 
 
 def run_once(weather_cache, predictor=None, speed=1, settings_version=0, alert_manager=None,
-             site_history=None, agent=None):
+             site_history=None, agent=None, stats=None):
     # Keep 6 minutes of history: the last 1 minute is used for today's score,
     # the full 6 minutes lets the AI forecast see trends.
     readings_by_worker = load_recent_readings(history=HISTORY_READINGS)
@@ -482,6 +483,9 @@ def run_once(weather_cache, predictor=None, speed=1, settings_version=0, alert_m
     alerts = alert_manager.update(results, speed, sim_time) if alert_manager else []
     # The AI agent acts on the alerts (automatic steps) and asks before big ones.
     agent_summary = agent.step(results, alerts, sites, sim_time) if agent else {"active": False}
+    if stats is not None:   # shift insights (heat-map, risk by job, recommendations)
+        stats.update(results, sites, sim_time)
+        stats.write()
     print_report(results)
 
     mode = "offline" if weather_cache.offline else "live"
@@ -578,6 +582,7 @@ class AlertManager:
                         "kind": kind,
                         "started_at": timestamp(),
                         "started_sim": sim_time,
+                        "minutes": forecast["minutes"] if forecast and kind == "predicted_red" else None,
                     }
                     self.active[wid] = alert
                     self._log("alert", alert, self._message(r, kind))
@@ -628,6 +633,8 @@ class AlertManager:
         ALERTS_FILE.parent.mkdir(exist_ok=True)
         with ALERTS_FILE.open("a", encoding="utf-8") as f:
             f.write(json.dumps(entry) + "\n")
+        if getattr(self, "listener", None):
+            self.listener(entry, alert)   # shift insights count every alert
 
 
 def timestamp():
@@ -690,6 +697,9 @@ def main():
     alert_manager = AlertManager()
     site_history = SiteHistory()
     agent = Agent()
+    stats = ShiftStats()
+    alert_manager.listener = stats.on_event
+    agent.listener = stats.on_event
     try:
         while True:
             # The dashboard switch (if it has been used) overrides --offline.
@@ -697,7 +707,7 @@ def main():
             offline, version = settings
             weather_cache.set_offline(offline)
             run_once(weather_cache, predictor, speed=args.speed, settings_version=version,
-                     alert_manager=alert_manager, site_history=site_history, agent=agent)
+                     alert_manager=alert_manager, site_history=site_history, agent=agent, stats=stats)
             time.sleep(loop_seconds)
     except KeyboardInterrupt:
         print("\nStopped by user.")
