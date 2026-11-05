@@ -57,7 +57,8 @@ python run_all.py --demo
 
 Time runs 15x faster, the simulated clock starts at 11:30, the dashboard starts
 on the summer scenario, and the results are the same every run: W02 presses SOS
-at ~20-30 seconds, W08 turns RED at ~33 seconds and W12 at ~40 seconds.
+at ~20-30 seconds and W12 turns RED at ~20 seconds; the AI agent catches most
+others (like W08) early (see "AI agent" below).
 Forecasts show both simulated minutes and real seconds. `--speed 5` gives a
 custom speed.
 
@@ -79,6 +80,30 @@ decision: the supervisor dials 999 themselves.
 It refreshes every 3 seconds. The switch at the top flips between **Live weather**
 (Open-Meteo) and **Summer scenario** (simulated UAE summer afternoon). The map needs
 internet; cards work without it.
+
+## AI agent (`agent.py`, page: AI agent)
+
+Runs inside the risk engine. For every heat or SOS alert it opens a **case** and
+follows sense → predict → act → check:
+
+| Action | Mode |
+|---|---|
+| Buzz the worker's helmet, send a water runner, schedule a 15-min shade break, notify the supervisor, alert a first-aider on SOS | **Automatic** |
+| Pause heavy work for a whole site crew, call emergency services (999) | **Asks first** (Approve / Override on the AI agent page) |
+
+Actions really change the simulation (via `data/controls.json`): a shade break
+makes the worker rest in the shade, water slows heating up, an approved pause
+stops heavy work at that site. The supervisor's own Dispatch water / Schedule
+shade break buttons work the same way. The agent checks each case 10 simulated
+minutes later and closes it, or flags "still at risk".
+
+The agent's automatic steps count as handling a *predicted* alert, but RED and
+SOS alerts always need a person. Requests expire after 20 simulated minutes;
+after an override (or expiry) it won't ask the same crew again for 30 minutes.
+
+**Effect on the demo:** because the agent acts early, W08 usually cools down
+before reaching the danger zone. W12 (predicted only ~1 minute ahead) still turns
+RED at about 20 seconds, and W02's SOS arrives at about 20-30 seconds.
 
 ## Sharing a public link (view-only)
 

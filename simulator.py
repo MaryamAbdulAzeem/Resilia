@@ -131,12 +131,21 @@ class Worker:
         self.sos_age_s = 0
         self.still_s = 0            # seconds the worker has stayed still after an SOS
 
-    def update(self, air_temp):
-        """Move the worker forward by one time step (one reading)."""
-        if self.still_s > 0:
-            self.activity = "resting"  # just called for help: not moving
+    def update(self, air_temp, on_break=False, heavy_paused=False, hydrated=False):
+        """
+        Move the worker forward by one time step (one reading).
+        on_break:     resting in the shade (a scheduled shade break)
+        heavy_paused: the supervisor paused heavy work for this crew
+        hydrated:     a water run arrived recently (heats up a bit more slowly)
+        """
+        if self.still_s > 0 or on_break:
+            self.activity = "resting"  # called for help, or on a shade break
         else:
             self._pick_next_activity()
+            if heavy_paused and self.activity == "heavy":
+                self.activity = "light"  # light tasks only while heavy work is paused
+        if on_break:
+            air_temp -= 4  # shade: no direct sun, cooler surroundings
 
         # 1) Heat strain builds up when working hard in hot air and
         #    goes down when resting. Hotter air = faster build-up.
@@ -145,6 +154,8 @@ class Worker:
         gain = ACTIVITY_HEAT_GAIN[self.activity]
         if gain > 0:
             gain = gain * (0.5 + heat_factor) / self.heat_tolerance
+            if hydrated:
+                gain *= 0.8
         else:
             gain = gain * self.heat_tolerance
         self.heat_strain = min(10.0, max(0.0, self.heat_strain + gain))
@@ -244,6 +255,28 @@ def air_temp_at(base_temp, hour):
     return min(50.0, max(28.0, base_temp + diurnal_offset(hour)))
 
 
+CONTROLS_FILE = Path("data") / "controls.json"
+
+
+def load_controls():
+    """
+    Shade breaks, water runs and crew pauses, written by the AI agent / supervisor
+    (via the risk engine). Each entry maps a worker or site to an end time.
+    """
+    try:
+        return json.loads(CONTROLS_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def active_until(table, key, sim_time):
+    until = (table or {}).get(key)
+    try:
+        return bool(until) and datetime.fromisoformat(until) > sim_time
+    except ValueError:
+        return False
+
+
 # ---------------------------------------------------------------------------
 # Main loop
 # ---------------------------------------------------------------------------
@@ -303,15 +336,21 @@ def main():
             sim_time = sim_start + timedelta(seconds=round_number * args.interval)
             hour = hour_of(sim_time)
             update_air_temps(air_temps)
+            controls = load_controls()
 
             readings = []
             for worker in workers:
                 air = air_temp_at(air_temps[worker.site], hour)
-                worker.update(air)
+                on_break = active_until(controls.get("breaks"), worker.worker_id, sim_time)
+                worker.update(air,
+                              on_break=on_break,
+                              heavy_paused=active_until(controls.get("pauses"), worker.site, sim_time),
+                              hydrated=active_until(controls.get("water"), worker.worker_id, sim_time))
                 worker.helmet_step(sim_time, args.interval)
                 reading = worker.reading()
                 reading["air_temp_c"] = round(air, 1)
                 reading["sim_time"] = sim_time.isoformat(timespec="seconds")
+                reading["on_break"] = on_break
                 readings.append(reading)
                 if reading["sos_pressed_at"] == reading["sim_time"]:
                     print(f"*** SOS: {worker.worker_id} held the helmet button at {sim_time:%H:%M:%S} ***")

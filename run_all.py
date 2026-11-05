@@ -127,12 +127,15 @@ def main():
     # Start from a clean slate so old test readings don't mix in.
     (DATA_DIR / "readings.jsonl").unlink(missing_ok=True)
     SHARE_URL_FILE.unlink(missing_ok=True)  # an old link is dead; don't show it
+    # Breaks / water / pauses use the simulated clock, which restarts each run.
+    for stale in ("controls.json", "agent_state.json"):
+        (DATA_DIR / stale).unlink(missing_ok=True)
     if args.demo:
         # W08 and W12 only turn RED in summer heat, so start the demo there.
         # (You can still flip the switch on the dashboard.)
         write_mode("offline")
         # Each demo starts with an empty alert/action log. (Normal runs keep it.)
-        for log in ("alerts.jsonl", "actions.jsonl"):
+        for log in ("alerts.jsonl", "actions.jsonl", "agent.jsonl"):
             (DATA_DIR / log).unlink(missing_ok=True)
         print(f"DEMO MODE: {speed:g}x speed, summer scenario, seed {DEMO_SEED}.")
     elif speed != 1:

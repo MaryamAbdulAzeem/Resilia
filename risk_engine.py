@@ -26,6 +26,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import simulator  # for the simulated clock, time-of-day sun, and UAE time zone
+from agent import Agent
 from predictor import HISTORY_READINGS, READINGS_PER_MINUTE, load_predictor
 
 READINGS_FILE = Path("data") / "readings.jsonl"
@@ -420,7 +421,7 @@ def device_summary(workers, latest_readings):
 
 
 def run_once(weather_cache, predictor=None, speed=1, settings_version=0, alert_manager=None,
-             site_history=None):
+             site_history=None, agent=None):
     # Keep 6 minutes of history: the last 1 minute is used for today's score,
     # the full 6 minutes lets the AI forecast see trends.
     readings_by_worker = load_recent_readings(history=HISTORY_READINGS)
@@ -446,7 +447,7 @@ def run_once(weather_cache, predictor=None, speed=1, settings_version=0, alert_m
         result["lat"], result["lon"] = SITE_COORDS.get(site, (None, None))
 
         # Helmet details from the latest reading.
-        for key in ("helmet_id", "gateway", "zone", "battery_pct", "sos_pressed_at", "motionless_s"):
+        for key in ("helmet_id", "gateway", "zone", "battery_pct", "sos_pressed_at", "motionless_s", "on_break"):
             result[key] = latest.get(key)
         result["sim_time"] = latest.get("sim_time")
         result["hr_change_5m"] = trend_5m(history, "heart_rate_bpm")
@@ -479,6 +480,8 @@ def run_once(weather_cache, predictor=None, speed=1, settings_version=0, alert_m
         return (-r["score"], 0 if f else 1, f["minutes"] if f else 0, r["worker_id"])
     results.sort(key=sort_key)
     alerts = alert_manager.update(results, speed, sim_time) if alert_manager else []
+    # The AI agent acts on the alerts (automatic steps) and asks before big ones.
+    agent_summary = agent.step(results, alerts, sites, sim_time) if agent else {"active": False}
     print_report(results)
 
     mode = "offline" if weather_cache.offline else "live"
@@ -494,6 +497,7 @@ def run_once(weather_cache, predictor=None, speed=1, settings_version=0, alert_m
         "live_weather_failed": sorted(s for s, v in sites.items()
                                       if mode == "live" and v["source"] != "open-meteo"),
         "speed": speed,
+        "agent": agent_summary,
         "alerts": alerts,   # open alerts for the supervisor
         "sites": sites,
         "workers": results,
@@ -685,6 +689,7 @@ def main():
     settings = (args.offline, 0)
     alert_manager = AlertManager()
     site_history = SiteHistory()
+    agent = Agent()
     try:
         while True:
             # The dashboard switch (if it has been used) overrides --offline.
@@ -692,7 +697,7 @@ def main():
             offline, version = settings
             weather_cache.set_offline(offline)
             run_once(weather_cache, predictor, speed=args.speed, settings_version=version,
-                     alert_manager=alert_manager, site_history=site_history)
+                     alert_manager=alert_manager, site_history=site_history, agent=agent)
             time.sleep(loop_seconds)
     except KeyboardInterrupt:
         print("\nStopped by user.")

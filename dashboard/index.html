@@ -237,7 +237,7 @@
 
   function forecastText(w) {
     if (w.sos_pressed_at) return "Help requested";
-    if (onShadeBreak(w)) return "On shade break";
+    if (w.on_break || onShadeBreak(w)) return "On shade break";
     if (w.level === "RED") return "In the danger zone";
     const f = w.forecast;
     if (f && f.level === "RED") return `Danger in ~${f.minutes} min`;
@@ -405,7 +405,7 @@
           ${R.actionButton("buzz", w.worker_id, alert.alert_id, "btn btn-text")}
           <button type="button" class="btn btn-text" data-locate="${esc(w.worker_id)}" data-key="loc-${esc(w.worker_id)}">Show location · Zone ${esc(w.zone || "?")}</button>
         </div>
-        ${handled ? `<div class="fa-handled">✓ ${esc(handled.label)} at ${R.entryTime(handled)}${R.responseSeconds(handled) != null ? ` · ${R.responseSeconds(handled)} s after the alert` : ""}. Resilia keeps watching.</div>` : ""}
+        ${handled ? `<div class="fa-handled">✓ ${esc(R.entryLabel(handled))} at ${R.entryTime(handled)}${R.responseSeconds(handled) != null ? ` · ${R.responseSeconds(handled)} s after the alert` : ""}. Resilia keeps watching${R.byAgent(handled) ? ' · <a href="/ai-agent.html">see what the agent did</a>' : ""}.</div>` : ""}
         ${R.state.viewOnly ? '<div class="fa-handled">View-only link: the supervisor responds from the control room.</div>' : ""}
         ${others.length ? `<div class="fa-others">Also needs attention:
           ${others.map((o) => `<button type="button" class="chip" data-pick="${esc(o.alert_id)}" data-key="pick-${esc(o.alert_id)}">${esc(o.worker_id)} · ${o.kind === "red" ? '<span class="st-act">▲ now</span>' : `<span class="st-act">↗ ~${o.minutes} min</span>`}</button>`).join("")}</div>` : ""}
@@ -483,7 +483,7 @@
             <div><h4>Heart rate (this session)</h4>${spark(t.map((p) => p.hr), "#ee5a4b")}</div>
             <div><h4>Skin temp (this session)</h4>${spark(t.map((p) => p.skin), "#f5a53c")}</div>
             <div><h4>Why</h4><ul class="detail-list">${(w.reasons.length ? w.reasons : ["No warning signs"]).map((r) => `<li>${esc(r)}</li>`).join("")}</ul></div>
-            <div><h4>Recent events</h4><ul class="detail-list">${actions.length ? actions.map((e) => `<li>${R.entryTime(e)} · ${esc(e.label || e.message)}</li>`).join("") : "<li>None yet</li>"}</ul></div>
+            <div><h4>Recent events</h4><ul class="detail-list">${actions.length ? actions.map((e) => `<li>${R.entryTime(e)} · ${esc(R.entryLabel(e))}</li>`).join("") : "<li>None yet</li>"}</ul></div>
           </div>
           <div class="detail-actions">
             ${R.actionButton("dispatch_water", w.worker_id, w.alert ? w.alert.alert_id : null, "btn btn-outline btn-sm")}
@@ -522,7 +522,9 @@
         : ["d-rising", `AI predicted heat stress for ${esc(e.worker_id)}${/~(\d+) min/.test(e.message) ? ` in ~${e.message.match(/~(\d+) min/)[1]} min` : ""}`];
       case "alert_escalated": return ["d-act", `${esc(e.worker_id)} reached the danger zone (as predicted)`];
       case "alert_cleared": return ["d-steady", `${esc(e.worker_id)} recovered · alert cleared`];
-      default: return ["", `${esc(e.label)} · ${esc(e.worker_id)}${resp != null ? `<span class="resp"> · ${resp} s after alert</span>` : ""}`];
+      case "agent": return [e.kind === "check" ? "d-steady" : "",
+        `<b>Agent</b> · ${esc(e.title)}${e.worker_id ? ` · ${esc(e.worker_id)}` : ""}`];
+      default: return ["", `${esc(e.label)}${e.worker_id ? ` · ${esc(e.worker_id)}` : ""}${resp != null ? `<span class="resp"> · ${resp} s after alert</span>` : ""}`];
     }
   }
 

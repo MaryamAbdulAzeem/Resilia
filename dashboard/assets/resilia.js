@@ -13,7 +13,7 @@
 
   const PAGES = [
     { key: "control", label: "Control room", href: "/", ready: true },
-    { key: "agent", label: "AI agent", href: "/ai-agent.html", ready: false },
+    { key: "agent", label: "AI agent", href: "/ai-agent.html", ready: true },
     { key: "insights", label: "Insights", href: "/insights.html", ready: false },
     { key: "about", label: "About", href: "/about.html", ready: false },
   ];
@@ -117,10 +117,16 @@
 
   R.alerts = () => (R.state.scores && R.state.scores.alerts) || [];
 
-  // An alert is handled by any action logged for it. If a "predicted" alert
-  // later ESCALATED to actual RED, only actions after that count.
-  R.handledAction = (alert) => R.state.log.find((e) => e.type === "action" && e.alert_id === alert.alert_id &&
-    (!alert.escalated_at || e.time >= alert.escalated_at)) || null;
+  // An alert is handled by any supervisor action logged for it. If a "predicted"
+  // alert later ESCALATED to actual RED, only actions after that count.
+  // The AI agent's automatic steps also handle a *predicted* alert (it buzzed,
+  // sent water and scheduled a break), but never a RED or SOS alert: those
+  // always need a person.
+  R.handledAction = (alert) => R.state.log.find((e) => e.alert_id === alert.alert_id && (
+    (e.type === "action" && (!alert.escalated_at || e.time >= alert.escalated_at)) ||
+    (e.type === "agent" && e.kind === "act" && alert.kind === "predicted_red"))) || null;
+  R.byAgent = (e) => e && e.type === "agent";
+  R.entryLabel = (e) => (e.type === "agent" ? `Agent: ${e.title}` : e.label || e.message || "");
   R.isHandled = (alert) => !!R.handledAction(alert);
   R.lastActionFor = (workerId, filter) => R.state.log.find((e) => e.type === "action" &&
     e.worker_id === workerId && (!filter || filter(e)));
@@ -166,6 +172,41 @@
       R.emit();
     }
   };
+
+  // Approve / Override one of the agent's requests.
+  R.decide = async (proposalId, decision) => {
+    if (R.state.viewOnly) return null;
+    const key = `decide:${proposalId}`;
+    if (inFlight.has(key)) return null;
+    inFlight.add(key);
+    R.emit();
+    try {
+      const res = await fetch("/api/decide", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ proposal_id: proposalId, decision }),
+      });
+      const entry = await res.json();
+      if (!res.ok) throw new Error(entry.error || "failed");
+      R.state.log.unshift(entry);
+      recentLocal.push({ entry, until: Date.now() + 10000 });
+      R.state.decided = R.state.decided || {};
+      R.state.decided[proposalId] = decision;   // show the choice straight away
+      R.toast(decision === "approve" ? "✓ Approved. The agent is applying it." : "✓ Overridden. The agent keeps watching.");
+      return entry;
+    } catch (err) {
+      R.toast(`Couldn't send the decision: ${err.message}`);
+      return null;
+    } finally {
+      inFlight.delete(key);
+      R.emit();
+    }
+  };
+  R.deciding = (proposalId) => inFlight.has(`decide:${proposalId}`);
+  document.addEventListener("click", (event) => {
+    const btn = event.target.closest("button[data-decide]");
+    if (!btn || btn.disabled) return;
+    R.decide(btn.dataset.proposal, btn.dataset.decide);
+  });
 
   // Any button with data-action / data-worker (and optional data-alert) posts an action.
   document.addEventListener("click", (event) => {
@@ -291,28 +332,12 @@
       <defs><radialGradient id="rs-logo-g" cx=".4" cy=".38"><stop offset="0" stop-color="#ffd18a"/>
       <stop offset=".6" stop-color="#f58a3c"/><stop offset="1" stop-color="#e2553e"/></radialGradient></defs></svg>`;
 
-  function buildHeader(pageKey) {
+  function buildHeader(pageKey, opts = {}) {
     const header = document.getElementById("rs-header");
     if (!header) return;
-    header.className = "rs-header";
-    const nav = PAGES.map((p) => p.ready
-      ? `<a href="${p.href}"${p.key === pageKey ? ' aria-current="page"' : ""}>${p.label}</a>`
-      : `<span class="soon" title="Coming next">${p.label}</span>`).join("");
-    const siteOpts = [`<option value="all">All sites</option>`, ...SITES.map((s) => `<option value="${s}">${s}</option>`)].join("");
-    header.innerHTML = `
-      <div class="hdr-top">
-        <a class="brand" href="/" aria-label="Resilia home">${LOGO}<span class="brand-name">Resilia</span></a>
-        <nav class="nav" aria-label="Main">${nav}</nav>
-        <div class="hdr-right">
-          <a class="hpill alerts" id="rs-alerts" href="/" hidden></a>
-          <span class="hpill demo" id="rs-demo" hidden></span>
-          <span class="hpill view" id="rs-view" hidden title="You're on the public link: you can watch, but actions are taken in the control room">👁 View only</span>
-          <button type="button" class="hpill share" id="rs-share" hidden title="Public view-only link for teammates. Click to copy."></button>
-          <label class="site-sel">Site <select id="rs-site">${siteOpts}</select></label>
-          <span class="hpill live" id="rs-live" role="status"><i></i><span id="rs-live-text">Connecting</span></span>
-          <button type="button" class="hpill sound" id="rs-sound">🔔 Sound</button>
-        </div>
-      </div>
+    header.className = "rs-header" + (opts.arc === false ? " compact" : "");
+    // Full heat arc (control room) or a thin sunrise-to-sunset stripe (other pages).
+    const arc = opts.arc === false ? `<div class="hdr-stripe" aria-hidden="true"></div>` : `
       <div class="arc-wrap">
         <div class="arc-box" id="rs-arc-box">
           <svg viewBox="0 0 1000 140" preserveAspectRatio="none" aria-hidden="true">
@@ -329,6 +354,26 @@
           <span id="rs-sunset">Sunset --:--</span>
         </div>
       </div>`;
+    const nav = PAGES.map((p) => p.ready
+      ? `<a href="${p.href}"${p.key === pageKey ? ' aria-current="page"' : ""}>${p.label}</a>`
+      : `<span class="soon" title="Coming next">${p.label}</span>`).join("");
+    const siteOpts = [`<option value="all">All sites</option>`, ...SITES.map((s) => `<option value="${s}">${s}</option>`)].join("");
+    header.innerHTML = `
+      <div class="hdr-top">
+        <a class="brand" href="/" aria-label="Resilia home">${LOGO}<span class="brand-name">Resilia</span></a>
+        <nav class="nav" aria-label="Main">${nav}</nav>
+        <div class="hdr-right">
+          <a class="hpill alerts" id="rs-alerts" href="/" hidden></a>
+          <span class="hpill agent" id="rs-agent" hidden></span>
+          <span class="hpill demo" id="rs-demo" hidden></span>
+          <span class="hpill view" id="rs-view" hidden title="You're on the public link: you can watch, but actions are taken in the control room">👁 View only</span>
+          <button type="button" class="hpill share" id="rs-share" hidden title="Public view-only link for teammates. Click to copy."></button>
+          <label class="site-sel">Site <select id="rs-site">${siteOpts}</select></label>
+          <span class="hpill live" id="rs-live" role="status"><i></i><span id="rs-live-text">Connecting</span></span>
+          <button type="button" class="hpill sound" id="rs-sound">🔔 Sound</button>
+        </div>
+      </div>
+      ${arc}`;
 
     const sel = document.getElementById("rs-site");
     try { R.state.site = localStorage.getItem("rs-site") || "all"; } catch {}
@@ -402,6 +447,13 @@
     const open = R.alerts().filter((a) => !R.isHandled(a));
     chip.hidden = pageKey === "control" || !open.length;
     if (open.length) chip.textContent = `⚠ ${open.length} open alert${open.length > 1 ? "s" : ""}`;
+    const agentPill = document.getElementById("rs-agent");
+    const ag = s && s.agent;
+    agentPill.hidden = !(headerOpts.agentPill && ag && ag.active);
+    if (ag && ag.active) {
+      agentPill.innerHTML = `<i class="agent-dot"></i>Agent active · ${ag.watching} helmets` +
+        (ag.waiting ? ` · <b>${ag.waiting} waiting</b>` : "");
+    }
     if (s) updateArc();
   }
 
@@ -470,13 +522,15 @@
   async function refresh() {
     const st = R.state;
     try {
-      const [res, logRes] = await Promise.all([
+      const [res, logRes, agentRes] = await Promise.all([
         fetch("/api/scores", { cache: "no-store" }),
         fetch("/api/log", { cache: "no-store" }).catch(() => null),
+        fetch("/api/agent", { cache: "no-store" }).catch(() => null),
       ]);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "No data");
       if (logRes && logRes.ok) st.log = mergeLog((await logRes.json()).entries || []);
+      if (agentRes && agentRes.ok) st.agent = await agentRes.json();
       st.scores = data;
       st.speed = data.speed || 1;
 
@@ -514,10 +568,12 @@
     setTimeout(loop, R.state.speed > 1 ? 1000 : POLL_MS);
   }
 
+  let headerOpts = {};
   R.init = (opts) => {
     pageKey = opts.page;
     onData = opts.onData || (() => {});
-    buildHeader(pageKey);
+    headerOpts = opts;
+    buildHeader(pageKey, opts);
     loadAccess().then(loop);
     setInterval(loadAccess, 10000);
   };

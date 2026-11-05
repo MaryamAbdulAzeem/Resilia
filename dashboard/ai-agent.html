@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Resilia · AI agent</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="/assets/resilia.css">
+<style>
+  .page-title { max-width: 44ch; }
+  .kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; margin: 26px 0 24px; }
+  @media (max-width: 1000px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .kpi { padding: 22px 26px; }
+  .kpi-label { color: var(--text-2); font-size: 15px; }
+  .kpi-value { font-family: var(--font-head); font-size: 54px; font-weight: 600; line-height: 1.1; margin: 8px 0 4px; }
+  .kpi-value small { font-size: 22px; color: var(--text-2); font-weight: 500; margin-left: 4px; }
+  .kpi-sub { color: var(--text-2); font-size: 15px; }
+  .kpi.dark { background: var(--navy); color: #fff; border-color: var(--navy); }
+  .kpi.dark .kpi-label, .kpi.dark .kpi-sub { color: rgba(255, 255, 255, .8); }
+
+  .cols { display: grid; grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr); gap: 24px; align-items: start; }
+  @media (max-width: 1000px) { .cols { grid-template-columns: 1fr; } }
+  .stack { display: grid; gap: 24px; }
+
+  /* ---- Live case timeline ---- */
+  .case-card { padding: 28px 34px; }
+  .case-picker { display: flex; flex-wrap: wrap; gap: 8px; margin: -4px 0 18px; }
+  .chip { border: 1px solid var(--line-2); background: var(--card); border-radius: 999px; padding: 6px 12px; cursor: pointer; font-weight: 600; font-size: 13.5px; color: var(--navy); }
+  .chip[aria-pressed="true"] { background: var(--navy); color: #fff; border-color: var(--navy); }
+  .chip .open-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--coral); margin-right: 6px; vertical-align: 1px; }
+  .chip[aria-pressed="true"] .open-dot { background: #ff9b8f; }
+  .timeline { list-style: none; margin: 0; padding: 0; position: relative; }
+  .timeline li { display: grid; grid-template-columns: 64px 48px 1fr; gap: 16px; padding: 0 0 26px; position: relative; }
+  .timeline li::before { content: ""; position: absolute; left: calc(64px + 16px + 23px); top: 44px; bottom: -2px; width: 2px; background: var(--line-2); }
+  .timeline li:last-child::before { display: none; }
+  .timeline .t { color: var(--text-2); font-size: 15px; padding-top: 12px; font-variant-numeric: tabular-nums; }
+  .step-ico { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 14px; font-family: var(--font-head); position: relative; z-index: 1; }
+  .ico-sense { background: #e6ecf2; color: var(--navy); font-size: 12.5px; }
+  .ico-predict { background: var(--coral-soft); color: var(--coral-text); }
+  .ico-act, .ico-ask { background: var(--navy); color: #fff; }
+  .ico-check { background: var(--sage-soft); color: var(--sage-text); font-size: 18px; }
+  .ico-note { background: var(--sun-soft); color: var(--gold-text); }
+  .ico-danger { background: var(--coral-soft); color: var(--coral-text); }
+  .step-title { font-weight: 600; font-size: 19px; margin-top: 8px; }
+  .step-detail { color: var(--text-2); font-size: 16px; margin-top: 2px; }
+  .case-empty { color: var(--text-2); padding: 12px 0 4px; }
+
+  .cases-table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  .cases-table th { text-align: left; font-size: 12.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-2); font-weight: 600; padding: 10px; border-bottom: 1px solid var(--line); }
+  .cases-table td { padding: 12px 10px; border-bottom: 1px solid var(--line); }
+  .cases-table tr { cursor: pointer; }
+  .cases-table tr:hover td { background: rgba(244, 239, 230, .6); }
+  .cases-wrap { overflow-x: auto; }
+
+  /* ---- Approval card (sun-gold accent: a decision, not an emergency) ---- */
+  .approve { position: relative; overflow: hidden; padding: 26px 30px; border-color: #efd9b2; }
+  .approve::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 5px; background: var(--sun); }
+  .tag { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 10px; font-weight: 600; font-size: 14px; }
+  .tag-ask { background: var(--sun-soft); color: var(--gold-text); }
+  .tag-ok { background: var(--sage-soft); color: var(--sage-text); }
+  .tag-muted { background: var(--sand); color: var(--text-2); }
+  .approve h2 { font-size: 26px; line-height: 1.25; margin: 14px 0 8px; }
+  .approve .why { color: var(--text-2); font-size: 17px; margin: 0 0 12px; }
+  .approve ul { margin: 0 0 18px; padding-left: 20px; color: var(--text-2); font-size: 16px; line-height: 1.7; }
+  .approve .btns { display: flex; flex-wrap: wrap; gap: 10px; }
+  #approvals { display: grid; gap: 18px; }
+  .decided { list-style: none; margin: 10px 0 0; padding: 0; font-size: 14.5px; color: var(--text-2); }
+  .decided li { padding: 8px 0; border-top: 1px solid var(--line); display: flex; gap: 10px; align-items: baseline; }
+  .decided .t { font-variant-numeric: tabular-nums; min-width: 44px; }
+
+  .rules { list-style: none; margin: 14px 0 0; padding: 0; }
+  .rules li { display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 9px 0; font-size: 16px; }
+  .badge { padding: 4px 12px; border-radius: 999px; font-size: 13.5px; font-weight: 600; white-space: nowrap; }
+  .b-auto { background: #e6ecf2; color: var(--navy); }
+  .b-ask { background: var(--sun-soft); color: var(--gold-text); }
+  .explain { background: var(--sun-soft); border: 1px solid #f1dcb5; border-radius: var(--radius); padding: 24px 28px; }
+  .explain h3 { margin: 0 0 8px; font-size: 22px; font-weight: 600; }
+  .explain p { margin: 0; color: var(--text-2); font-size: 15.5px; line-height: 1.65; }
+</style>
+</head>
+<body>
+<header id="rs-header"></header>
+
+<main class="wrap">
+  <p class="eyebrow" id="eyebrow">&nbsp;</p>
+  <h1 class="page-title" id="headline">Connecting to the agent…</h1>
+
+  <section class="kpis" aria-label="Agent summary">
+    <div class="card kpi"><div class="kpi-label">Handled automatically</div><div class="kpi-value num" id="k-auto">–</div><div class="kpi-sub">cases: buzzes, water runs, breaks</div></div>
+    <div class="card kpi"><div class="kpi-label">Median time to act</div><div class="kpi-value" id="k-time">–</div><div class="kpi-sub">from AI alert to helmet buzz</div></div>
+    <div class="card kpi"><div class="kpi-label">Reached danger zone</div><div class="kpi-value num" id="k-danger">–</div><div class="kpi-sub" id="k-danger-sub">&nbsp;</div></div>
+    <div class="card kpi dark"><div class="kpi-label">Waiting for you</div><div class="kpi-value num" id="k-wait">–</div><div class="kpi-sub">big decisions need a human</div></div>
+  </section>
+
+  <section class="cols">
+    <div class="stack">
+      <article class="card case-card">
+        <div class="card-head"><h2 id="case-title">Live case</h2><span class="hint">Sense → predict → act → check</span></div>
+        <div class="case-picker" id="case-picker"></div>
+        <ol class="timeline" id="timeline"><li class="case-empty">Waiting for the first case…</li></ol>
+      </article>
+      <article class="card">
+        <div class="card-head"><h2>All cases this shift</h2><span class="hint">Tap a case to see its timeline</span></div>
+        <div class="cases-wrap">
+          <table class="cases-table">
+            <thead><tr><th>Opened</th><th>Worker</th><th>Why</th><th>Steps</th><th>Outcome</th></tr></thead>
+            <tbody id="cases-body"><tr><td colspan="5" class="empty">No cases yet.</td></tr></tbody>
+          </table>
+        </div>
+      </article>
+    </div>
+
+    <div class="stack">
+      <div id="approvals"></div>
+      <article class="card">
+        <h2>What the agent may do</h2>
+        <ul class="rules" id="rules"></ul>
+      </article>
+      <article class="explain">
+        <h3>Every action is explainable</h3>
+        <p>Each step shows the readings behind it: heart-rate trend, forehead temperature, movement and site WBGT.
+          The agent only acts on its own for small, safe steps; anything that affects a whole crew or calls emergency
+          services waits for a person. Supervisors can see every step here and in the control room's action log,
+          and can override any request.</p>
+      </article>
+    </div>
+  </section>
+
+  <footer class="rs-foot">Resilia hackathon prototype · the agent follows fixed rules and uses the AI forecast · simulated helmets</footer>
+</main>
+
+<script src="/assets/resilia.js"></script>
+<script>
+(function () {
+  const R = window.Resilia;
+  const { esc } = R;
+  let selectedCase = null;
+  let userPicked = false;
+
+  const inSite = (x) => R.state.site === "all" || x.site === R.state.site;
+  const crewLabel = (job) => (job === "delivery rider" ? "delivery" : job);
+  const KIND_WHY = { sos: "SOS help call", red: "Danger zone", predicted_red: "Predicted heat stress" };
+
+  function render() {
+    const a = R.state.agent;
+    const s = R.state.scores;
+    if (!a || !s) return;
+
+    const cases = (a.cases || []).filter(inSite);
+    const proposals = (a.proposals || []).filter(inSite);
+    const waiting = proposals.filter((p) => p.status === "waiting" && !(R.state.decided || {})[p.proposal_id]);
+    const k = a.kpis || {};
+
+    // Eyebrow + headline
+    const start = R.hhmm(a.shift_started_sim);
+    R.setHTML(document.getElementById("eyebrow"),
+      `${R.state.speed > 1 ? "Demo shift" : "This shift"} since ${esc(start)} · ${esc(R.state.site === "all" ? "All sites" : R.state.site)} · watching ${a.watching} helmets` +
+      (R.statusWarn ? ` · <span class="warn">${esc(R.statusText)}</span>` : ""));
+    const handled = cases.filter((c) => c.acted).length;
+    let head = handled
+      ? `The agent handled ${handled} situation${handled === 1 ? "" : "s"} on its own this shift.`
+      : "The agent is watching. Nothing has needed action yet.";
+    head += waiting.length ? ` ${R.numberWord(waiting.length)} decision${waiting.length === 1 ? " needs" : "s need"} you.` : " Nothing needs you right now.";
+    document.getElementById("headline").textContent = head;
+
+    // KPIs (for the selected site)
+    R.tween(document.getElementById("k-auto"), handled);
+    const med = k.median_seconds_to_act;
+    R.setHTML(document.getElementById("k-time"), med == null ? "–" : med < 1 ? `&lt;1<small>s</small>` : `${Math.round(med)}<small>s</small>`);
+    const danger = cases.filter((c) => c.reached_red).length;
+    R.tween(document.getElementById("k-danger"), danger);
+    document.getElementById("k-danger-sub").textContent = !cases.length ? "no cases yet"
+      : danger === 0 ? "every case caught early" : `${danger} of ${cases.length} cases`;
+    R.tween(document.getElementById("k-wait"), waiting.length);
+
+    renderCases(cases);
+    renderApprovals(waiting, proposals);
+    renderRules(a.rules || []);
+  }
+
+  // ---------------------------------------------------------------- cases
+  function pickDefault(cases) {
+    const open = cases.filter((c) => c.status === "open");
+    const latest = (list) => list.slice().sort((x, y) =>
+      (y.steps.at(-1)?.sim_time || "").localeCompare(x.steps.at(-1)?.sim_time || ""))[0];
+    return (latest(open) || latest(cases) || {}).case_id || null;
+  }
+
+  function renderCases(cases) {
+    if (!userPicked || !cases.some((c) => c.case_id === selectedCase)) {
+      selectedCase = pickDefault(cases);
+      userPicked = false;
+    }
+    const c = cases.find((x) => x.case_id === selectedCase);
+
+    // Picker: open cases first, then the latest closed ones.
+    const chips = [...cases.filter((x) => x.status === "open"), ...cases.filter((x) => x.status !== "open").slice(0, 5)];
+    R.setHTML(document.getElementById("case-picker"), chips.map((x) =>
+      `<button type="button" class="chip" data-case="${esc(x.case_id)}" data-key="case-${esc(x.case_id)}" aria-pressed="${x.case_id === selectedCase}">
+        ${x.status === "open" ? '<span class="open-dot" aria-hidden="true"></span>' : ""}${esc(x.worker_id)} · ${x.status === "open" ? "open" : "closed"}</button>`).join(""));
+
+    if (!c) {
+      document.getElementById("case-title").textContent = "Live case";
+      R.setHTML(document.getElementById("timeline"),
+        `<li class="case-empty">No cases yet. The agent opens a case as soon as the AI predicts heat stress, a worker reaches the danger zone, or someone presses SOS.</li>`);
+    } else {
+      document.getElementById("case-title").textContent =
+        `${c.status === "open" ? "Live case" : "Closed case"} · ${c.worker_id}, ${crewLabel(c.job)}`;
+      let n = 0;
+      R.setHTML(document.getElementById("timeline"), c.steps.map((s) => {
+        let ico;
+        if (s.kind === "sense") ico = `<span class="step-ico ico-sense">SEE</span>`;
+        else if (s.kind === "predict") ico = `<span class="step-ico ico-predict">AI</span>`;
+        else if (s.kind === "act" || s.kind === "ask") ico = `<span class="step-ico ico-${s.kind}">${++n}</span>`;
+        else if (s.kind === "check") ico = `<span class="step-ico ico-check">✓</span>`;
+        else ico = `<span class="step-ico ${/danger|still at risk/i.test(s.title) ? "ico-danger" : "ico-note"}">!</span>`;
+        return `<li><span class="t">${R.hhmm(s.sim_time)}</span>${ico}
+          <div><div class="step-title">${esc(s.title)}</div><div class="step-detail">${esc(s.detail)}</div></div></li>`;
+      }).join("") + (c.status === "open" ? `<li><span class="t"></span><span class="step-ico ico-note" aria-hidden="true">…</span>
+          <div><div class="step-title" style="color:var(--text-2)">Watching</div><div class="step-detail">The agent checks the outcome around ${R.hhmm(c.check_due)}.</div></div></li>` : ""));
+    }
+
+    // All cases table
+    R.setHTML(document.getElementById("cases-body"), cases.length ? cases.map((x) => {
+      const last = x.steps.at(-1) || {};
+      const outcome = x.status === "open" ? R.statusHTML("act").replace("Act now", "Open")
+        : x.reached_red ? "Closed · reached danger zone" : "Closed · caught early";
+      return `<tr data-case="${esc(x.case_id)}" tabindex="0" data-key="row-${esc(x.case_id)}">
+        <td class="num">${R.hhmm(x.opened_sim)}</td>
+        <td><b>${esc(x.worker_id)}</b> <span class="hint">${esc(x.site)}</span></td>
+        <td>${esc(KIND_WHY[x.kind] || x.kind)}</td>
+        <td class="num">${x.steps.length}</td>
+        <td>${outcome}<div class="hint">${esc(last.title || "")}</div></td></tr>`;
+    }).join("") : '<tr><td colspan="5" class="empty">No cases yet.</td></tr>');
+  }
+
+  document.addEventListener("click", (e) => {
+    const el = e.target.closest("[data-case]");
+    if (!el) return;
+    selectedCase = el.dataset.case;
+    userPicked = true;
+    render();
+    if (el.tagName === "TR") document.getElementById("case-title").scrollIntoView({ behavior: R.REDUCE_MOTION ? "auto" : "smooth", block: "start" });
+  });
+  document.addEventListener("keydown", (e) => {
+    const row = e.target.closest && e.target.closest("tr[data-case]");
+    if (row && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); row.click(); }
+  });
+
+  // ------------------------------------------------------------ approvals
+  function renderApprovals(waiting, all) {
+    const box = document.getElementById("approvals");
+    if (waiting.length) {
+      R.setHTML(box, waiting.slice(0, 3).map((p) => `
+        <article class="card approve" aria-live="polite">
+          <span class="tag tag-ask">Needs your approval</span>
+          <h2>${esc(p.title)}</h2>
+          <p class="why">${esc(p.why)}</p>
+          <ul>${p.reasons.map((r) => `<li>${esc(r)}</li>`).join("")}</ul>
+          ${R.state.viewOnly ? '<p class="hint">View-only link: the supervisor decides in the control room.</p>' : `
+          <div class="btns">
+            <button type="button" class="btn btn-primary" data-decide="approve" data-proposal="${esc(p.proposal_id)}" data-key="ap-${esc(p.proposal_id)}"${R.deciding(p.proposal_id) ? " disabled" : ""}>${esc(p.approve_label)}</button>
+            <button type="button" class="btn btn-outline" data-decide="override" data-proposal="${esc(p.proposal_id)}" data-key="ov-${esc(p.proposal_id)}"${R.deciding(p.proposal_id) ? " disabled" : ""}>${esc(p.override_label)}</button>
+          </div>`}
+          <p class="hint" style="margin:12px 0 0">Asked at ${R.hhmm(p.created_sim)} · expires after 20 simulated minutes without a decision</p>
+        </article>`).join("") + (waiting.length > 3 ? `<p class="hint">+ ${waiting.length - 3} more waiting</p>` : ""));
+      return;
+    }
+    const decided = all.filter((p) => p.status !== "waiting").slice(-4).reverse();
+    const word = { approved: ["tag-ok", "Approved"], overridden: ["tag-muted", "Overridden"], expired: ["tag-muted", "Expired"] };
+    R.setHTML(box, `
+      <article class="card approve" style="border-color:var(--line)">
+        <span class="tag tag-ok">Nothing waiting</span>
+        <h2>No decisions need you right now</h2>
+        <p class="why">The agent asks here before any big step, like pausing a whole crew or calling emergency services.</p>
+        ${decided.length ? `<ul class="decided">${decided.map((p) => {
+          const [cls, label] = word[p.status] || ["tag-muted", p.status];
+          return `<li><span class="t">${R.hhmm(p.decided_sim)}</span><span class="tag ${cls}">${label}</span><span>${esc(p.title)}</span></li>`;
+        }).join("")}</ul>` : ""}
+      </article>`);
+  }
+
+  function renderRules(rules) {
+    R.setHTML(document.getElementById("rules"), rules.map((r) =>
+      `<li><span>${esc(r.label)}</span><span class="badge ${r.mode === "auto" ? "b-auto" : "b-ask"}">${r.mode === "auto" ? "Automatic" : "Asks first"}</span></li>`).join(""));
+  }
+
+  R.init({ page: "agent", arc: false, agentPill: true, onData: render });
+})();
+</script>
+</body>
+</html>

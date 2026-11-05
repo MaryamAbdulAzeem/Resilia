@@ -10,6 +10,8 @@ It does three things:
                           or "Acknowledge"; saved to data/actions.jsonl
   GET  /api/log        -> alerts (from the risk engine) + supervisor actions, newest first
   GET  /api/access     -> is this visitor view-only? (+ the public link, for the laptop)
+  GET  /api/agent      -> the AI agent's cases, timeline, rules and requests for approval
+  POST /api/decide     -> a supervisor approves or overrides one of the agent's requests
 
 View-only mode: visitors coming through the public Cloudflare link can watch
 but not change anything (no action buttons, no weather switch). Only people
@@ -37,6 +39,10 @@ SETTINGS_FILE = BASE_DIR / "data" / "settings.json"
 ALERTS_FILE = BASE_DIR / "data" / "alerts.jsonl"    # written by the risk engine
 ACTIONS_FILE = BASE_DIR / "data" / "actions.jsonl"  # written here, when supervisors click
 SHARE_URL_FILE = BASE_DIR / "data" / "share_url.txt"  # written by run_all.py --share
+AGENT_LOG_FILE = BASE_DIR / "data" / "agent.jsonl"      # every step the AI agent took
+AGENT_STATE_FILE = BASE_DIR / "data" / "agent_state.json"
+PROPOSAL_ID = re.compile(r"^P\d{1,6}$")
+DECISIONS = {"approve": "Approved the agent's request", "override": "Overrode the agent's request"}
 
 # Cloudflare adds these headers to every visit that comes through its tunnel.
 # Visitors can't remove them, and this server only accepts connections from
@@ -58,7 +64,7 @@ ACTIONS = {
 }
 WORKER_ID = re.compile(r"^W\d{2}$")
 ALERT_ID = re.compile(r"^W\d{2}-(sos-)?\d{1,16}$")
-LOG_LIMIT = 200  # newest entries sent to the dashboard
+LOG_LIMIT = 400  # newest entries sent to the dashboard
 
 settings_lock = threading.Lock()  # two clicks at once can't both write the file
 actions_lock = threading.Lock()
@@ -105,12 +111,43 @@ def log_action(worker_id, action, alert_id):
         "worker_status": status.get("status"),
         "sim_time": status.get("sim_time"),  # simulated clock, for display
     }
+    append_action(entry)
+    print(f"Supervisor action: {entry['label']} for {worker_id}")
+    return entry
+
+
+def append_action(entry):
     with actions_lock:
         ACTIONS_FILE.parent.mkdir(exist_ok=True)
         with ACTIONS_FILE.open("a", encoding="utf-8") as f:
             f.write(json.dumps(entry) + "\n")
-    print(f"Supervisor action: {entry['label']} for {worker_id}")
-    return entry
+
+
+def log_decision(proposal_id, decision):
+    """Approve / Override on one of the agent's requests. The agent reads it and acts."""
+    try:
+        state = json.loads(AGENT_STATE_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        state = {}
+    proposal = next((p for p in state.get("proposals", []) if p.get("proposal_id") == proposal_id), None)
+    if proposal is None:
+        return None, "That request doesn't exist (any more)."
+    if proposal.get("status") != "waiting":
+        return None, f"That request was already {proposal.get('status')}."
+    entry = {
+        "time": datetime.now().isoformat(timespec="seconds"),
+        "type": "action",
+        "action": decision,
+        "label": f"{DECISIONS[decision]}: {proposal.get('title', '')}",
+        "proposal_id": proposal_id,
+        "worker_id": proposal.get("worker_id"),
+        "site": proposal.get("site"),
+        "alert_id": None,
+        "sim_time": state.get("sim_time"),
+    }
+    append_action(entry)
+    print(f"Supervisor decision: {entry['label']}")
+    return entry, None
 
 
 def read_settings():
@@ -170,8 +207,13 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             return self.send_raw_json(body)
         if self.path.startswith("/api/mode"):
             return self.send_json(read_settings())
+        if self.path.startswith("/api/agent"):
+            try:
+                return self.send_raw_json(AGENT_STATE_FILE.read_bytes())
+            except OSError:
+                return self.send_json({"error": "The AI agent hasn't started yet."}, 503)
         if self.path.startswith("/api/log"):
-            entries = read_jsonl(ALERTS_FILE) + read_jsonl(ACTIONS_FILE)
+            entries = read_jsonl(ALERTS_FILE) + read_jsonl(ACTIONS_FILE) + read_jsonl(AGENT_LOG_FILE)
             entries.sort(key=lambda e: e.get("time", ""), reverse=True)
             return self.send_json({"entries": entries[:LOG_LIMIT]})
         # Anything else: serve files from the dashboard folder (index.html etc.)
@@ -193,6 +235,13 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                                             "Actions can only be taken on the control-room laptop."}, 403)
         if self.path.startswith("/api/actions"):
             return self.handle_action()
+        if self.path.startswith("/api/decide"):
+            body = self.read_body()
+            pid, decision = body.get("proposal_id"), body.get("decision")
+            if not isinstance(pid, str) or not PROPOSAL_ID.match(pid) or decision not in DECISIONS:
+                return self.send_json({"error": "need proposal_id like P3 and decision approve/override"}, 400)
+            entry, error = log_decision(pid, decision)
+            return self.send_json(entry) if entry else self.send_json({"error": error}, 409)
         if not self.path.startswith("/api/mode"):
             return self.send_json({"error": "not found"}, 404)
         mode = self.read_body().get("weather_mode")
