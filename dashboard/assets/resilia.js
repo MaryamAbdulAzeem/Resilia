@@ -239,19 +239,26 @@
   }
 
   // ------------------------------------------------------------------ sound
-  // ONE plain tone, nothing musical: a single low, soft pulse.
-  //   - a worker becomes Act now (in danger, or the AI predicts danger): one pulse
-  //   - SOS help request: a double pulse, repeating every few seconds until a
-  //     supervisor responds. SOS sounds even when the alert tone is muted.
-  //   - nothing for rising, back to steady, or confirmed actions.
+  // ONE plain tone, nothing musical (no chimes, no melodies), clearly noticeable:
+  //   - new Act-now / AI-prediction alert: a firm half-second tone, played twice
+  //     with a short gap, once per new alert
+  //   - SOS help request: an urgent alarm of rapid short pulses of the same tone,
+  //     repeating until a supervisor responds; SOS sounds even when muted
+  //   - nothing for rising, back to steady, or confirmed actions
   // Browsers block all sound until the page has been clicked or tapped once.
-  const TONE_HZ = 220;          // low
-  const PULSE_SECONDS = 0.16;   // short
-  const TONE_VOLUME = 0.09;     // soft
-  const SOS_REPEAT_MS = 4000;   // SOS double pulse every 4 seconds
+  const TONE_HZ = 620;            // mid pitch
+  const ALERT_TONE_S = 0.5;       // firm half-second tone...
+  const ALERT_GAP_S = 0.18;       // ...twice, with a short gap
+  const SOS_PULSE_S = 0.09;       // SOS: rapid short pulses
+  const SOS_PULSE_GAP_S = 0.07;
+  const SOS_PULSES = 6;           // per burst
+  const SOS_REPEAT_MS = 2000;     // a burst every 2 seconds until answered
+  const MAX_VOLUME = 0.55;        // loudness at 100% on the volume slider
 
-  let soundWanted = true;       // the act-now tone (SOS ignores this)
+  let soundWanted = true;         // the act-now tone (SOS ignores this)
   try { soundWanted = localStorage.getItem("hs-sound") !== "off"; } catch {}
+  let volume = 0.8;               // 0..1, set by the slider in the menu
+  try { const v = parseFloat(localStorage.getItem("rs-volume")); if (!isNaN(v)) volume = Math.max(0, Math.min(1, v)); } catch {}
   let audio = null;
   let lockedAtPress = false;
   const audioRunning = () => !!audio && audio.state === "running";
@@ -269,44 +276,45 @@
   document.addEventListener("pointerdown", unlockAudio, { capture: true });
   document.addEventListener("keydown", unlockAudio, { capture: true });
 
-  // One short pulse of a plain, low sine tone, softened with a gentle fade in/out.
-  function pulse(start) {
+  // One plain sine tone of a given length (tiny fade in/out only to avoid clicks).
+  function tone(start, seconds, vol) {
     const osc = audio.createOscillator();
     const gain = audio.createGain();
-    const soften = audio.createBiquadFilter();
+    const level = MAX_VOLUME * vol;
     osc.type = "sine";
     osc.frequency.value = TONE_HZ;
-    soften.type = "lowpass";
-    soften.frequency.value = 700;
     gain.gain.setValueAtTime(0.0001, start);
-    gain.gain.linearRampToValueAtTime(TONE_VOLUME, start + 0.02);
-    gain.gain.setValueAtTime(TONE_VOLUME, start + PULSE_SECONDS - 0.04);
-    gain.gain.linearRampToValueAtTime(0.0001, start + PULSE_SECONDS);
-    osc.connect(soften).connect(gain).connect(audio.destination);
+    gain.gain.linearRampToValueAtTime(level, start + 0.012);
+    gain.gain.setValueAtTime(level, start + seconds - 0.015);
+    gain.gain.linearRampToValueAtTime(0.0001, start + seconds);
+    osc.connect(gain).connect(audio.destination);
     osc.start(start);
-    osc.stop(start + PULSE_SECONDS + 0.02);
+    osc.stop(start + seconds + 0.02);
   }
-  R.playTone = (kind = "single") => {
+  R.playTone = (kind = "alert") => {
     if (!audioRunning()) return;
     const t = audio.currentTime + 0.03;
-    pulse(t);
-    if (kind === "sos") pulse(t + 0.3);   // double pulse
+    if (kind === "sos") {
+      // Never let the SOS alarm go quiet: at least half volume, whatever the slider says.
+      const vol = Math.max(volume, 0.5);
+      for (let i = 0; i < SOS_PULSES; i++) tone(t + i * (SOS_PULSE_S + SOS_PULSE_GAP_S), SOS_PULSE_S, vol);
+    } else {
+      if (volume <= 0) return;
+      tone(t, ALERT_TONE_S, volume);
+      tone(t + ALERT_TONE_S + ALERT_GAP_S, ALERT_TONE_S, volume);
+    }
   };
 
-  // Act-now tone: once, when a worker newly becomes Act now (whatever the site
-  // filter). Nothing on first load, for workers who already were.
-  let prevStatus = null;
+  // Act-now / AI-prediction tone: once per NEW alert (whatever the site filter).
+  // A predicted alert that later reaches the danger zone is the same alert: no
+  // second sound. Nothing on first load for alerts that were already open.
+  let heardAlerts = null;
   function soundForChanges() {
-    const workers = (R.state.scores && R.state.scores.workers) || [];
-    const now = {};
-    let newlyAct = false;
-    for (const w of workers) {
-      now[w.worker_id] = w.status;
-      const becameAct = prevStatus && w.status === "act" && prevStatus[w.worker_id] !== "act";
-      if (becameAct && !w.sos_pressed_at) newlyAct = true;   // SOS has its own sound
-    }
-    prevStatus = now;
-    if (newlyAct && soundWanted) R.playTone("single");
+    const alerts = R.alerts().filter((a) => a.kind === "red" || a.kind === "predicted_red");
+    const fresh = heardAlerts ? alerts.filter((a) => !heardAlerts.has(a.alert_id) && !R.isHandled(a)) : [];
+    heardAlerts = heardAlerts || new Set();
+    alerts.forEach((a) => heardAlerts.add(a.alert_id));
+    if (fresh.length && soundWanted) R.playTone("alert");
   }
 
   // SOS: double pulse every few seconds while any help request is unanswered.
@@ -340,14 +348,20 @@
     if (lockedAtPress || !audioRunning()) {
       lockedAtPress = false;
       unlockAudio();                                   // first tap: just allow sound
-      setTimeout(() => R.playTone("single"), 100);     // one pulse, so you know it works
+      setTimeout(() => R.playTone("alert"), 100);      // the alert tone, so you know it works
     } else {
       soundWanted = !soundWanted;
       try { localStorage.setItem("hs-sound", soundWanted ? "on" : "off"); } catch {}
-      if (soundWanted) setTimeout(() => R.playTone("single"), 50);
+      if (soundWanted) setTimeout(() => R.playTone("alert"), 50);
     }
     updateSoundButton();
     R.emit();
+  }
+  function onVolumeChange(event) {
+    volume = Number(event.target.value) / 100;
+    try { localStorage.setItem("rs-volume", String(volume)); } catch {}
+    document.getElementById("rs-volume-value").textContent = `${Math.round(volume * 100)}%`;
+    if (event.type === "change") R.playTone("alert");  // when you let go: hear the new level
   }
 
   // ---------------------------------------------- water-drop animation
@@ -415,7 +429,14 @@
             <div class="menu" id="rs-menu" role="dialog" aria-label="Options" hidden>
               <label class="menu-row">Site
                 <select id="rs-site">${siteOpts}</select></label>
-              <button type="button" class="menu-item sound" id="rs-sound">🔔 Sound</button>
+              <div class="sound-row">
+                <button type="button" class="menu-item sound" id="rs-sound">🔔 Sound</button>
+                <label class="volume" title="Alert volume (the SOS alarm never goes below 50%)">
+                  <span class="sr-only">Volume</span>
+                  <input type="range" id="rs-volume" min="0" max="100" step="5" aria-label="Alert volume">
+                  <span id="rs-volume-value" class="num">80%</span>
+                </label>
+              </div>
               <div class="menu-info" id="rs-agent" hidden></div>
               <div class="menu-info" id="rs-demo" hidden></div>
               <div class="menu-info view" id="rs-view" hidden>👁 You're on the public view-only link: you can watch, but actions are taken in the control room.</div>
@@ -452,6 +473,11 @@
       if (e.key === "Escape" && !menu.hidden) { setMenu(false); menuBtn.focus(); }
     });
     document.getElementById("rs-sound").addEventListener("click", onSoundClick);
+    const vol = document.getElementById("rs-volume");
+    vol.value = String(Math.round(volume * 100));
+    document.getElementById("rs-volume-value").textContent = `${Math.round(volume * 100)}%`;
+    vol.addEventListener("input", onVolumeChange);
+    vol.addEventListener("change", onVolumeChange);
     document.getElementById("rs-share").addEventListener("click", async () => {
       if (!R.state.shareUrl) return;
       try { await navigator.clipboard.writeText(R.state.shareUrl); R.toast("✓ Public link copied. Paste it in your team chat."); }

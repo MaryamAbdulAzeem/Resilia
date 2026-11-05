@@ -1,62 +1,62 @@
 {
   "test_examples": 135000,
-  "model_accuracy": 0.88,
-  "baseline_no_change_accuracy": 0.801,
-  "future_red_cases": 11600,
-  "future_red_caught_pct": 37.5,
-  "red_warnings_correct_pct": 71.2,
+  "model_accuracy": 0.904,
+  "baseline_no_change_accuracy": 0.824,
+  "future_red_cases": 8263,
+  "future_red_caught_pct": 39.4,
+  "red_warnings_correct_pct": 69.4,
   "confidence_tradeoff": [
     {
       "confidence_bar": 0.2,
-      "future_red_caught_pct": 67.9,
-      "warnings_correct_pct": 46.9
+      "future_red_caught_pct": 66.2,
+      "warnings_correct_pct": 47.9
     },
     {
       "confidence_bar": 0.25,
-      "future_red_caught_pct": 61.3,
-      "warnings_correct_pct": 52.5
+      "future_red_caught_pct": 60.7,
+      "warnings_correct_pct": 52.8
     },
     {
       "confidence_bar": 0.3,
-      "future_red_caught_pct": 55.7,
-      "warnings_correct_pct": 57.8
+      "future_red_caught_pct": 55.6,
+      "warnings_correct_pct": 56.6
     },
     {
       "confidence_bar": 0.35,
-      "future_red_caught_pct": 50.4,
-      "warnings_correct_pct": 62.5
+      "future_red_caught_pct": 51.0,
+      "warnings_correct_pct": 60.5
     },
     {
       "confidence_bar": 0.4,
-      "future_red_caught_pct": 45.4,
-      "warnings_correct_pct": 65.8
+      "future_red_caught_pct": 46.8,
+      "warnings_correct_pct": 63.4
     },
     {
       "confidence_bar": 0.5,
-      "future_red_caught_pct": 36.2,
-      "warnings_correct_pct": 71.8
+      "future_red_caught_pct": 38.4,
+      "warnings_correct_pct": 69.9
     }
   ],
   "chosen_confidence_bar": {
     "confidence_bar": 0.35,
-    "future_red_caught_pct": 50.4,
-    "warnings_correct_pct": 62.5
+    "future_red_caught_pct": 51.0,
+    "warnings_correct_pct": 60.5
   },
   "early_warning": {
-    "workers_who_turned_red": 186,
-    "warned_in_advance_pct": 91.9,
-    "average_warning_minutes": 5.3,
-    "workers_never_red": 264,
-    "false_alarm_pct": 26.1
+    "workers_who_turned_red": 142,
+    "warned_in_advance_pct": 93.7,
+    "average_warning_minutes": 5.2,
+    "workers_never_red": 308,
+    "false_alarm_pct": 24.7
   },
   "feature_importance": {
-    "wbgt": 0.424,
-    "current_score": 0.247,
-    "skin_temp_now": 0.21,
-    "heart_rate_now": 0.058,
-    "minutes_ahead": 0.028,
-    "skin_temp_change_5m": 0.016,
-    "hard_work_share_5m": 0.007,
+    "wbgt": 0.444,
+    "current_score": 0.276,
+    "skin_temp_now": 0.142,
+    "heart_rate_now": 0.082,
+    "minutes_ahead": 0.025,
+    "skin_temp_change_5m": 0.017,
+    "hard_work_share_5m": 0.006,
     "heart_rate_change_5m": 0.005,
     "rest_share_5m": 0.004
   }

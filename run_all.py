@@ -139,7 +139,7 @@ def main():
     (DATA_DIR / "readings.jsonl").unlink(missing_ok=True)
     SHARE_URL_FILE.unlink(missing_ok=True)  # an old link is dead; don't show it
     # Breaks / water / pauses use the simulated clock, which restarts each run.
-    for stale in ("controls.json", "agent_state.json", "insights.json"):
+    for stale in ("controls.json", "agent_state.json", "insights.json", "day_history.json"):
         (DATA_DIR / stale).unlink(missing_ok=True)
     if args.demo:
         # W08 and W12 only turn RED in summer heat, so start the demo there.

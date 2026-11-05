@@ -47,6 +47,12 @@ SITES = {
     "Al Ain": 45.0,
 }
 
+# Share of the gap to the target closed each 5-second reading. Small values mean
+# the body changes gradually (about 1.5 minutes to adjust to a new level of effort),
+# so a worker passes through "Rising" before reaching the danger range.
+HR_RESPONSE = 0.05
+SKIN_RESPONSE = 0.06
+
 # How much each activity level raises heart rate above resting.
 ACTIVITY_HEART_BOOST = {"resting": 0, "light": 20, "moderate": 45, "heavy": 70}
 
@@ -199,14 +205,16 @@ class Worker:
             + ACTIVITY_HEART_BOOST[self.activity]
             + self.heat_strain * 4
         )
-        # Move part of the way towards the target (bodies don't change instantly),
-        # then add a little random "sensor noise".
-        self.heart_rate += (target_hr - self.heart_rate) * 0.3
+        # Move part of the way towards the target (bodies don't change instantly:
+        # heart rate takes about a minute to settle after a change in effort, so
+        # a worker shows signs of strain, "Rising", before reaching the danger
+        # range), then add a little random "sensor noise".
+        self.heart_rate += (target_hr - self.heart_rate) * HR_RESPONSE
         self.heart_rate += random.uniform(-2, 2)
 
         # 3) Skin temperature: rises with air temperature and heat strain.
         target_skin = 33.5 + heat_factor * 1.0 + self.heat_strain * 0.3
-        self.skin_temp += (target_skin - self.skin_temp) * 0.2
+        self.skin_temp += (target_skin - self.skin_temp) * SKIN_RESPONSE
         self.skin_temp += random.uniform(-0.05, 0.05)
 
     def _pick_next_activity(self):

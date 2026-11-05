@@ -27,7 +27,7 @@ from pathlib import Path
 
 import simulator  # for the simulated clock, time-of-day sun, and UAE time zone
 from agent import Agent
-from insights import ShiftStats
+from insights import DayTrail, ShiftStats
 from predictor import HISTORY_READINGS, READINGS_PER_MINUTE, load_predictor
 
 READINGS_FILE = Path("data") / "readings.jsonl"
@@ -46,6 +46,11 @@ PREDICTED_COOLDOWN_SIM_SECONDS = 45 * 60
 # A forecast shows on the dashboard from 30% confidence, but only raises an
 # ALERT (and the agent's response) when the AI is at least this sure.
 PREDICTED_ALERT_MIN_PROBABILITY = 0.3
+# A worker shows as "Act now" from a forecast alone only above this confidence.
+ACT_NOW_MIN_PROBABILITY = 0.7
+# Early signs of strain ("Rising"), just below the scoring thresholds of 130 bpm / 35.5 C.
+RISING_HR = 125
+RISING_SKIN = 35.3
 
 # How many recent readings to average per worker.
 # 12 readings x 5 seconds = the last 1 minute. Averaging smooths out sensor noise.
@@ -296,6 +301,13 @@ def score_worker(readings, weather):
     else:
         skin_points = 0
 
+    # Resting, normal body readings, flagged ONLY because the weather is extreme:
+    # say so plainly, so nobody thinks the worker is unwell.
+    if activity == "resting" and env_points == 2 and hr_points == 0 and skin_points == 0:
+        reasons[0] = (f"Extreme heat only: site WBGT {wbgt:.1f} °C is above even the {limit:.0f} °C limit for "
+                      f"resting. Heart rate and skin temperature are normal; this worker is flagged because "
+                      f"of the weather, not their body. Keep them in shade and cooling.")
+
     total = env_points + hr_points + skin_points
     if total >= 4:
         level = "RED"
@@ -376,13 +388,19 @@ def crew_status(r):
     red_forecast = f and f["level"] == "RED"
     if r.get("sos_pressed_at"):
         return "act"
-    # Act now: RED, or the AI is sure enough of RED to raise an alert.
-    if r["level"] == "RED" or (red_forecast and f["probability"] >= PREDICTED_ALERT_MIN_PROBABILITY):
+    # Act now: the readings are ALREADY in the danger range, or the AI predicts
+    # danger with high confidence (above 70%). Less certain forecasts are "Rising"
+    # (the agent still acts on them early, from 30%).
+    if r["level"] == "RED" or (red_forecast and f["probability"] > ACT_NOW_MIN_PROBABILITY):
         return "act"
-    # Rising = real body signs of strain, or a less certain RED forecast to watch.
+    # Rising = body signs of strain, or a less certain RED forecast to watch.
+    # Strain counts a little BEFORE the scoring thresholds (130 bpm / 35.5 C), so a
+    # worker always shows "Rising" before they can reach the danger range.
     # (A forecast of merely reaching YELLOW doesn't count: on a hot morning almost
     # everyone gets one, which made the cool hours look riskier than midday.)
-    if red_forecast or r["hr_points"] + r["skin_points"] > 0:
+    strain = (r["hr_points"] + r["skin_points"] > 0 or r["avg_heart_rate_bpm"] > RISING_HR
+              or r["avg_skin_temp_c"] > RISING_SKIN)
+    if red_forecast or strain:
         return "rising"
     return "steady"
 
@@ -444,7 +462,7 @@ def device_summary(workers, latest_readings):
 
 
 def run_once(weather_cache, predictor=None, speed=1, settings_version=0, alert_manager=None,
-             site_history=None, agent=None, stats=None):
+             site_history=None, agent=None, stats=None, day_trail=None):
     # Keep 6 minutes of history: the last 1 minute is used for today's score,
     # the full 6 minutes lets the AI forecast see trends.
     readings_by_worker = load_recent_readings(history=HISTORY_READINGS)
@@ -508,6 +526,8 @@ def run_once(weather_cache, predictor=None, speed=1, settings_version=0, alert_m
     if stats is not None:   # shift insights (heat-map, risk by job, recommendations)
         stats.update(results, sites, sim_time)
         stats.write()
+    if day_trail is not None:   # each worker's whole day (Workers page chart)
+        day_trail.update(results, sim_time)
     print_report(results)
 
     mode = "offline" if weather_cache.offline else "live"
@@ -742,8 +762,13 @@ def main():
     site_history = SiteHistory()
     agent = Agent()
     stats = ShiftStats()
-    alert_manager.listener = stats.on_event
-    agent.listener = stats.on_event
+    day_trail = DayTrail()
+
+    def on_event(entry, alert=None):   # every alert / agent step / supervisor action
+        stats.on_event(entry, alert)
+        day_trail.on_event(entry, alert)
+    alert_manager.listener = on_event
+    agent.listener = on_event
     try:
         while True:
             # The dashboard switch (if it has been used) overrides --offline.
@@ -751,7 +776,8 @@ def main():
             offline, version = settings
             weather_cache.set_offline(offline)
             run_once(weather_cache, predictor, speed=args.speed, settings_version=version,
-                     alert_manager=alert_manager, site_history=site_history, agent=agent, stats=stats)
+                     alert_manager=alert_manager, site_history=site_history, agent=agent, stats=stats,
+                     day_trail=day_trail)
             time.sleep(loop_seconds)
     except KeyboardInterrupt:
         print("\nStopped by user.")

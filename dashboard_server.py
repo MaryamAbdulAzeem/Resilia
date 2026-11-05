@@ -43,6 +43,7 @@ SHARE_URL_FILE = BASE_DIR / "data" / "share_url.txt"  # written by run_all.py --
 AGENT_LOG_FILE = BASE_DIR / "data" / "agent.jsonl"      # every step the AI agent took
 AGENT_STATE_FILE = BASE_DIR / "data" / "agent_state.json"
 INSIGHTS_FILE = BASE_DIR / "data" / "insights.json"
+DAY_FILE = BASE_DIR / "data" / "day_history.json"                 # each worker's day
 HISTORY_FILE = BASE_DIR / "models" / "history_30d.json"          # simulated 30-day history
 HISTORY_PROGRESS_FILE = BASE_DIR / "data" / "history_progress.json"
 PROPOSAL_ID = re.compile(r"^P\d{1,6}$")
@@ -228,6 +229,16 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 return self.send_raw_json(INSIGHTS_FILE.read_bytes())
             except OSError:
                 return self.send_json({"error": "No insights yet. Is the risk engine running?"}, 503)
+        if self.path.startswith("/api/worker-day"):
+            # One worker's whole day (Workers page history chart): ?id=W08
+            match = re.search(r"[?&]id=(W\d{2})\b", self.path)
+            if not match:
+                return self.send_json({"error": "need ?id=W08"}, 400)
+            try:
+                day = json.loads(DAY_FILE.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                return self.send_json({"error": "No day history yet. Is the risk engine running?"}, 503)
+            return self.send_json(day.get("workers", {}).get(match.group(1)) or {"points": [], "events": []})
         if self.path.startswith("/api/agent"):
             try:
                 return self.send_raw_json(AGENT_STATE_FILE.read_bytes())

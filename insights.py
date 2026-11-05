@@ -309,6 +309,75 @@ class ShiftStats:
                 time.sleep(0.05)
 
 
+DAY_FILE = Path("data") / "day_history.json"
+
+
+class DayTrail:
+    """
+    Each worker's whole day, for the Workers page history chart: one point per
+    simulated minute (heart rate, forehead temperature, site WBGT, status) and
+    the alerts and interventions (water, shade breaks) along the way.
+    """
+
+    MAX_POINTS = 16 * 60   # up to 16 simulated hours
+
+    def __init__(self, path=DAY_FILE):
+        self.path = path
+        self.points = defaultdict(list)   # worker -> [[HH:MM, hr, skin, wbgt, status], ...]
+        self.events = defaultdict(list)   # worker -> [[HH:MM, type, label], ...]
+        self.last_minute = None
+
+    def update(self, results, sim_time):
+        minute = sim_time[11:16]
+        for w in results:
+            row = [minute, w["avg_heart_rate_bpm"], w["avg_skin_temp_c"], w["wbgt_c"], w["status"]]
+            pts = self.points[w["worker_id"]]
+            if pts and pts[-1][0] == minute:
+                pts[-1] = row
+            else:
+                pts.append(row)
+                del pts[:-self.MAX_POINTS]
+        if minute != self.last_minute:   # write once per simulated minute
+            self.last_minute = minute
+            self.write()
+
+    EVENT_NAMES = {
+        ("alert", "predicted_red"): ("alert", "AI predicted danger"),
+        ("alert", "red"): ("alert", "Danger zone"),
+        ("alert_escalated", None): ("alert", "Reached danger zone"),
+        ("sos", None): ("sos", "SOS help request"),
+    }
+
+    def on_event(self, entry, alert=None):
+        wid = entry.get("worker_id")
+        if not wid:
+            return
+        t = (entry.get("sim_time") or "")[11:16]
+        etype, action = entry.get("type"), entry.get("action")
+        named = self.EVENT_NAMES.get((etype, entry.get("kind"))) or self.EVENT_NAMES.get((etype, None))
+        if etype in ("alert", "alert_escalated", "sos") and named:
+            self.events[wid].append([t, *named])
+        elif action in ("water", "dispatch_water"):
+            self.events[wid].append([t, "water", "Water run" + (" (supervisor)" if etype == "action" else "")])
+        elif action == "water_join":
+            self.events[wid].append([t, "water", "Water (shared run)"])
+        elif action in ("short_break", "shade_break"):
+            self.events[wid].append([t, "break", "Shade break" + (" (supervisor)" if etype == "action" else "")])
+
+    def write(self):
+        data = {"workers": {wid: {"points": pts, "events": self.events.get(wid, [])}
+                            for wid, pts in self.points.items()}}
+        self.path.parent.mkdir(exist_ok=True)
+        tmp = self.path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data), encoding="utf-8")
+        for _ in range(5):
+            try:
+                os.replace(tmp, self.path)
+                return
+            except PermissionError:
+                time.sleep(0.05)
+
+
 def _join(items):
     items = list(items)
     return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]

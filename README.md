@@ -12,7 +12,7 @@ using (simulated) Resilia smart helmets. Design mock-ups are in `designs/`.
 | `dashboard_server.py` | Small web server for the dashboard and its data. |
 | `dashboard/index.html` | Home page (`/`): what Resilia does, a real caught-early case from this shift, live shift stats. |
 | `dashboard/control-room.html` | Control room page (SOS banner, AI alert card, crew table, action log, map). |
-| `dashboard/workers.html` | Workers page: roster with status filters, search and sort; each worker's vitals, 40-min trend, day totals, agent cases and actions (link to one with `/workers.html#W08`). |
+| `dashboard/workers.html` | Workers page: roster with status filters, search and sort; each worker's vitals, a full-day chart (heart rate, forehead temperature, site WBGT, status strip, markers for alerts, SOS, water and shade breaks), day totals, agent cases and actions (link to one with `/workers.html#W08`). |
 | `dashboard/ai-agent.html` | AI agent page: live case timeline, approvals (Approve / Override), automatic vs ask-first rules. |
 | `dashboard/insights.html` | Insights page: heat-map by site and hour, risk by job, alerts vs interventions, recommendations. |
 | `dashboard/about.html` | About page: the helmet, its three states (with live counts), and how it connects (with live numbers). |
@@ -152,8 +152,14 @@ between automatic shade breaks (unless the worker is in the danger zone): about
 breaks per worker per day. (The AI model was trained before the sun was added;
 it still uses the same inputs.)
 
-Status note: **Rising** means real body signs of strain (raised heart rate or
-skin temperature). A predicted RED makes a worker **Act now**. An alert stays open
+Status note: **Act now** only when the readings are already in the danger range
+(RED), the AI predicts danger with more than 70% confidence, or SOS. **Rising**
+means early body signs of strain (heart rate above 125 bpm or forehead above
+35.3 °C, just below the scoring thresholds) or a less certain danger forecast. The
+simulated body changes gradually (about 1.5 minutes to adjust to new effort), so
+workers pass through Rising before Act now (SOS presses are instant). A resting
+worker flagged only because the WBGT is extreme gets a plain "Extreme heat only"
+reason. The agent still acts on danger forecasts from 30% confidence. An alert stays open
 until the worker has been calm for 10 simulated minutes (so a worker hovering at
 the edge is one episode, not many), and after a predicted alert clears the same
 worker can't get another *predicted* alert for 45 minutes (RED and SOS alerts are
@@ -198,13 +204,14 @@ Also starts a free Cloudflare quick tunnel and prints a temporary public link
 - **Pop-ups** (bottom-right) for every unhandled alert, with **Dispatch water**,
   **Schedule shade break** and **Acknowledge**. Any of these handles the alert.
   After an escalation, the supervisor has to respond again.
-- **Sound:** one plain, low, soft tone (220 Hz, 0.16 s), nothing musical. A single
-  pulse when a worker becomes **Act now** (in the danger zone, or the AI predicts
-  it). **SOS**: a double pulse every 4 s until a supervisor responds, even when the
-  alert tone is muted (menu → sound). No sound for rising, back to steady, or
-  confirmed actions; Dispatch water shows a small water-drop animation instead.
-  Browsers block all sound until the page has been clicked once: the menu button
-  shows a dot, and the SOS banner a hint, until then.
+- **Sound:** one plain mid-pitch tone (620 Hz), nothing musical. **New Act-now /
+  AI-prediction alert**: a firm half-second tone played twice with a short gap, once
+  per new alert. **SOS**: an urgent burst of 6 rapid short pulses every 2 s until a
+  supervisor responds; it sounds even when the alert tone is muted and never below
+  50% volume. A **volume slider** sits next to the sound button in the menu. No
+  sound for rising, back to steady, or confirmed actions; Dispatch water shows a
+  small water-drop animation instead. Browsers block all sound until the page has
+  been clicked once: the menu button shows a dot, and the SOS banner a hint, until then.
 - **Card buttons:** every card has Dispatch water / Schedule shade break and shows
   the last action taken.
 - **Action log** at the bottom: alerts raised, escalated and cleared, plus every

@@ -126,6 +126,11 @@ button.hpill { cursor: pointer; }
 }
 .menu-item:hover { background: var(--sand); }
 .menu-item.locked { border-color: var(--sun); background: var(--sun-soft); }
+.sound-row { display: grid; gap: 6px; }
+.volume { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text-2); padding: 2px 4px; }
+.volume input { flex: 1; accent-color: var(--navy); cursor: pointer; }
+.volume span.num { min-width: 38px; text-align: right; font-weight: 600; color: var(--text); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .menu-item.share span { font-weight: 500; font-size: 12.5px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .menu-info { font-size: 13.5px; color: var(--text-2); padding: 8px 12px; border-radius: 10px; background: var(--sand); line-height: 1.45; }
 .menu-info .agent-dot { display: inline-block; margin-right: 6px; vertical-align: 1px; }

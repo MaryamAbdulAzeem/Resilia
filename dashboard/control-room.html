@@ -308,7 +308,8 @@
     document.getElementById("k-act-card").classList.toggle("hot", act > 0);
     const sosN = workers.filter((w) => w.sos_pressed_at).length;
     const redN = workers.filter((w) => !w.sos_pressed_at && w.level === "RED").length;
-    const pred = workers.filter((w) => !w.sos_pressed_at && w.level !== "RED" && w.forecast && w.forecast.level === "RED");
+    const pred = workers.filter((w) => w.status === "act" && !w.sos_pressed_at && w.level !== "RED" &&
+      w.forecast && w.forecast.level === "RED");   // only high-confidence (70%+) predictions are "Act now"
     const parts = [];
     if (sosN) parts.push(`${sosN} help call${sosN > 1 ? "s" : ""}`);
     if (redN) parts.push(`${redN} in the danger zone`);
@@ -332,9 +333,10 @@
     const statusOf = {};
     (R.state.scores.workers || []).forEach((w) => { statusOf[w.worker_id] = w.status; });
     return R.alerts()
-      // An alert stays open for 2 simulated minutes after the worker calms down
-      // (so a flicker doesn't re-alert). Only feature workers who are still at risk.
-      .filter((a) => statusOf[a.worker_id] === "act")
+      // An alert stays open for a while after the worker calms down (so a flicker
+      // doesn't re-alert). Only feature workers who are still at risk: Act now, or
+      // Rising (e.g. the AI predicts danger, but not yet with 70%+ confidence).
+      .filter((a) => statusOf[a.worker_id] === "act" || statusOf[a.worker_id] === "rising")
       .filter((a) => a.kind !== "sos" && (R.state.site === "all" || a.site === R.state.site))
       .sort((a, b) => rank(a) - rank(b) || (a.minutes ?? 0) - (b.minutes ?? 0) || a.worker_id.localeCompare(b.worker_id));
   }
