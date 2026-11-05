@@ -407,7 +407,7 @@
         <div class="fa-actions">
           ${R.actionButton("dispatch_water", w.worker_id, alert.alert_id, "btn btn-primary")}
           ${R.actionButton("shade_break", w.worker_id, alert.alert_id, "btn btn-outline")}
-          ${R.actionButton("buzz", w.worker_id, alert.alert_id, "btn btn-text")}
+          ${R.buzzSentTo(w) ? R.actionButton("buzz", w.worker_id, alert.alert_id, "btn btn-text") : ""}
           <button type="button" class="btn btn-text" data-locate="${esc(w.worker_id)}" data-key="loc-${esc(w.worker_id)}">Show location · Zone ${esc(w.zone || "?")}</button>
         </div>
         ${handled ? `<div class="fa-handled">✓ ${esc(R.entryLabel(handled))} at ${R.entryTime(handled)}${R.responseSeconds(handled) != null ? ` · ${R.responseSeconds(handled)} s after the alert` : ""}. Resilia keeps watching${R.byAgent(handled) ? ' · <a href="/ai-agent.html">see what the agent did</a>' : ""}.</div>` : ""}
@@ -493,7 +493,7 @@
           <div class="detail-actions">
             ${R.actionButton("dispatch_water", w.worker_id, w.alert ? w.alert.alert_id : null, "btn btn-outline btn-sm")}
             ${R.actionButton("shade_break", w.worker_id, w.alert ? w.alert.alert_id : null, "btn btn-outline btn-sm")}
-            ${R.actionButton("buzz", w.worker_id, w.alert ? w.alert.alert_id : null, "btn btn-outline btn-sm")}
+            ${R.buzzSentTo(w) ? R.actionButton("buzz", w.worker_id, w.alert ? w.alert.alert_id : null, "btn btn-outline btn-sm") : ""}
             <button type="button" class="btn btn-text btn-sm" data-locate="${esc(w.worker_id)}" data-key="loc2-${esc(w.worker_id)}">Show on map · Zone ${esc(w.zone || "?")}</button>
             <a class="btn btn-text btn-sm" href="/workers.html#${esc(w.worker_id)}">Worker page →</a>
             <span class="hint">Helmet ${esc(w.helmet_id || "")} · ${esc(w.gateway || "")} · ${esc(w.site)}</span>

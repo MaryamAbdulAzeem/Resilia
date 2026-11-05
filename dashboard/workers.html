@@ -319,7 +319,7 @@
       <div class="actions">
         ${R.actionButton("dispatch_water", w.worker_id, alertId, "btn btn-primary btn-sm")}
         ${R.actionButton("shade_break", w.worker_id, alertId, "btn btn-outline btn-sm")}
-        ${R.actionButton("buzz", w.worker_id, alertId, "btn btn-outline btn-sm")}
+        ${R.buzzSentTo(w) ? R.actionButton("buzz", w.worker_id, alertId, "btn btn-outline btn-sm") : ""}
       </div>`}
 
       <div class="dsec"><h3>Today · heart rate, forehead temperature and site WBGT</h3>${dayChart(w)}</div>

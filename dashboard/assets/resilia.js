@@ -130,6 +130,12 @@
     (e.type === "action" && (!alert.escalated_at || e.time >= alert.escalated_at)) ||
     (e.type === "agent" && e.kind === "act" && alert.kind === "predicted_red"))) || null;
   R.byAgent = (e) => e && e.type === "agent";
+  // Has this worker's helmet already been buzzed for their current alert (by the
+  // AI agent or a supervisor)? Only then does "Buzz again" make sense.
+  R.buzzSentTo = (w) => {
+    const alert = w && (w.alert || w.sos_alert);
+    return !!alert && R.state.log.some((e) => e.alert_id === alert.alert_id && e.action === "buzz");
+  };
   R.entryLabel = (e) => (e.type === "agent" ? `Agent: ${e.title}` : e.label || e.message || "");
   R.isHandled = (alert) => !!R.handledAction(alert);
   R.lastActionFor = (workerId, filter) => R.state.log.find((e) => e.type === "action" &&

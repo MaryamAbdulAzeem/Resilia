@@ -405,6 +405,24 @@ def crew_status(r):
     return "steady"
 
 
+FOR_ACTIVITY = {"resting": "resting", "light": "light work", "moderate": "moderate work", "heavy": "heavy work"}
+
+
+def steady_wording(r):
+    """
+    A Steady worker on a hot site: the heat is information, not a warning about
+    them. Say "site is hot, body readings normal" instead of "WBGT above limit".
+    (The resting "Extreme heat only" note already says this in full.)
+    """
+    if r["status"] != "steady" or r["env_points"] == 0 or r["hr_points"] + r["skin_points"] > 0:
+        return
+    if r["reasons"] and r["reasons"][0].startswith("Extreme heat only"):
+        return
+    r["reasons"] = [f"Site is hot (WBGT {r['wbgt_c']:.1f} °C, "
+                    f"{'above' if r['env_points'] == 2 else 'close to'} the {r['wbgt_limit']:.0f} °C limit for "
+                    f"{FOR_ACTIVITY.get(r['activity_level'], 'this work')}); body readings normal"]
+
+
 def trend_5m(history, key):
     """How much a reading rose (+) or fell (-) over the last 5 minutes (1-minute averages)."""
     per_min = READINGS_PER_MINUTE
@@ -500,6 +518,7 @@ def run_once(weather_cache, predictor=None, speed=1, settings_version=0, alert_m
             wbgt = estimate_wbgt(weather["air_temp_c"], weather["humidity_pct"], weather["solar_w_m2"])
             result["forecast"] = predictor.forecast(history, wbgt, result["level"], result["score"])
         result["status"] = crew_status(result)
+        steady_wording(result)
         results.append(result)
         if site_history is not None:
             site_history.add(site, sim_time, result["wbgt_c"], weather["air_temp_c"])
