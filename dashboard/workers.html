@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Resilia · Workers</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="/assets/resilia.css">
+<style>
+  .page-title { max-width: 40ch; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 12px 18px; align-items: center; justify-content: space-between; margin: 0 0 20px; }
+  .filters { display: flex; flex-wrap: wrap; gap: 8px; }
+  .fchip { border: 1px solid var(--line-2); background: var(--card); border-radius: 999px; padding: 8px 14px; cursor: pointer; font-weight: 600; font-size: 14px; color: var(--navy); display: inline-flex; gap: 8px; align-items: center; }
+  .fchip[aria-pressed="true"] { background: var(--navy); color: #fff; border-color: var(--navy); }
+  .fchip i { width: 9px; height: 9px; border-radius: 50%; }
+  .fchip .n { opacity: .75; font-variant-numeric: tabular-nums; }
+  .tools { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .tools input, .tools select { font: inherit; font-size: 14.5px; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--card); color: var(--text); }
+  .tools input { width: 210px; }
+
+  .layout { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(340px, 1fr); gap: 24px; align-items: start; }
+  @media (max-width: 1050px) { .layout { grid-template-columns: 1fr; } }
+  .roster { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; }
+
+  .wcard { text-align: left; font: inherit; color: inherit; cursor: pointer; padding: 16px 18px; border-radius: var(--radius);
+           background: var(--card); border: 1px solid var(--line); box-shadow: var(--shadow); position: relative; overflow: hidden;
+           transition: border-color .2s, transform .15s; width: 100%; }
+  .wcard:hover { border-color: var(--line-2); transform: translateY(-1px); }
+  .wcard[aria-pressed="true"] { border-color: var(--navy); box-shadow: 0 0 0 2px var(--navy), var(--shadow); }
+  .wcard.act { border-color: rgba(238, 90, 75, .45); }
+  .wcard.act::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--coral); }
+  .wtop { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+  .wid { font-family: var(--font-head); font-size: 20px; font-weight: 700; }
+  .wmeta { color: var(--text-2); font-size: 13.5px; text-transform: capitalize; }
+  .wvitals { display: flex; gap: 16px; margin: 12px 0 2px; font-size: 14px; color: var(--text-2); white-space: nowrap; }
+  .wvitals b { color: var(--text); font-size: 17px; font-variant-numeric: tabular-nums; }
+  .wfc { font-size: 13.5px; color: var(--text-2); font-weight: 600; margin-bottom: 6px; }
+  .wspark { width: 100%; height: 34px; display: block; }
+  .wfoot { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--text-2); margin-top: 8px; }
+  .flag { display: inline-block; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; margin: 6px 6px 0 0; }
+  .flag-sos { background: var(--coral-soft); color: var(--coral-text); }
+  .flag-break { background: #e6ecf2; color: var(--navy); }
+  .flag-low { background: var(--sun-soft); color: var(--gold-text); }
+
+  /* ---- Detail panel ---- */
+  .detail { position: sticky; top: 16px; padding: 24px 26px; }
+  @media (max-width: 1050px) { .detail { position: static; } }
+  .detail h2 { font-size: 28px; margin: 2px 0 2px; }
+  .detail .sub { color: var(--text-2); margin-bottom: 14px; text-transform: capitalize; }
+  .vitals { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 14px 0 18px; }
+  .vit { background: var(--sand); border-radius: 12px; padding: 10px 12px; }
+  .vit .k { font-size: 12.5px; color: var(--text-2); }
+  .vit .v { font-family: var(--font-head); font-size: 21px; font-weight: 600; text-transform: capitalize; }
+  .vit .v small { font-family: var(--font-body); font-size: 12px; color: var(--text-2); font-weight: 500; }
+  .dsec h3 { margin: 18px 0 8px; font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-2); font-weight: 600; }
+  .chart { width: 100%; height: 110px; display: block; }
+  .chart-axis { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .today { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .today div { font-size: 13px; color: var(--text-2); }
+  .today b { display: block; font-family: var(--font-head); font-size: 22px; color: var(--text); font-weight: 600; }
+  .riskbar { height: 10px; border-radius: 999px; background: #ece4d6; overflow: hidden; margin-top: 10px; }
+  .riskbar i { display: block; height: 100%; background: var(--sun-deep); border-radius: 999px; transition: width .8s; }
+  .list { list-style: none; margin: 0; padding: 0; font-size: 14px; }
+  .list li { padding: 7px 0; border-top: 1px solid var(--line); display: flex; gap: 10px; }
+  .list .t { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 42px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+  .helmet-row { font-size: 14px; color: var(--text-2); }
+  .empty-detail { color: var(--text-2); }
+</style>
+</head>
+<body>
+<header id="rs-header"></header>
+
+<main class="wrap">
+  <p class="eyebrow" id="eyebrow">&nbsp;</p>
+  <div class="title-row"><h1 class="page-title" id="headline">Loading the crew…</h1></div>
+
+  <div class="toolbar">
+    <div class="filters" role="group" aria-label="Filter by status" id="filters"></div>
+    <div class="tools">
+      <input type="search" id="search" placeholder="Search ID, job or zone" aria-label="Search workers">
+      <label class="hint">Sort <select id="sort" aria-label="Sort workers">
+        <option value="risk">Most at risk first</option>
+        <option value="today">Most time at risk today</option>
+        <option value="id">Worker ID</option>
+      </select></label>
+    </div>
+  </div>
+
+  <div class="layout">
+    <section class="roster" id="roster" aria-label="Workers"></section>
+    <aside class="card detail" id="detail" aria-live="polite"><p class="empty-detail">Select a worker to see their day.</p></aside>
+  </div>
+
+  <footer class="rs-foot">Resilia hackathon prototype · simulated helmets · personal data stays with the site team</footer>
+</main>
+
+<script src="/assets/resilia.js"></script>
+<script>
+(function () {
+  const R = window.Resilia;
+  const { esc } = R;
+  let filter = "all";
+  let selected = (location.hash || "").replace("#", "") || null;
+  let insights = null, lastFetch = 0;
+  const crewLabel = (job) => (job === "delivery rider" ? "Delivery rider" : `${R.cap(job)} crew`);
+
+  async function fetchInsights() {
+    if (Date.now() - lastFetch < 4000) return;
+    lastFetch = Date.now();
+    try { const res = await fetch("/api/insights", { cache: "no-store" }); if (res.ok) insights = await res.json(); } catch {}
+    render();
+  }
+
+  const trailOf = (wid) => ((R.state.agent && R.state.agent.trails) || {})[wid] || [];
+  const todayOf = (wid) => ((insights && insights.workers) || {})[wid] || null;
+  const riskShare = (wid) => { const t = todayOf(wid); return t && t.minutes ? t.at_risk_minutes / t.minutes : 0; };
+
+  function sparkline(values, color, w = 200, h = 34) {
+    if (values.length < 2) return `<svg class="wspark" viewBox="0 0 ${w} ${h}"></svg>`;
+    const lo = Math.min(...values) - 2, hi = Math.max(...values) + 2;
+    const pts = values.map((v, i) => `${(i / (values.length - 1) * w).toFixed(1)},${(h - 2 - (v - lo) / (hi - lo) * (h - 4)).toFixed(1)}`).join(" ");
+    return `<svg class="wspark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>`;
+  }
+
+  function forecastText(w) {
+    if (w.sos_pressed_at) return "Help requested";
+    if (w.on_break) return "On shade break";
+    if (w.level === "RED") return "In the danger zone";
+    if (w.forecast && w.forecast.level === "RED") return `Danger in ~${w.forecast.minutes} min`;
+    if (w.forecast) return `Watch · ~${w.forecast.minutes} min`;
+    return w.status === "rising" ? "Watch" : "Stable";
+  }
+
+  // ------------------------------------------------------------ roster
+  function visibleWorkers() {
+    const q = document.getElementById("search").value.trim().toLowerCase();
+    const sort = document.getElementById("sort").value;
+    let list = R.workers().filter((w) => filter === "all" || w.status === filter);
+    if (q) list = list.filter((w) => `${w.worker_id} ${w.job} ${w.site} zone ${w.zone}`.toLowerCase().includes(q));
+    const rank = (w) => R.STATUS[w.status].rank;
+    if (sort === "id") list.sort((a, b) => a.worker_id.localeCompare(b.worker_id));
+    else if (sort === "today") list.sort((a, b) => riskShare(b.worker_id) - riskShare(a.worker_id) || a.worker_id.localeCompare(b.worker_id));
+    else list.sort((a, b) => rank(a) - rank(b) || b.score - a.score || a.worker_id.localeCompare(b.worker_id));
+    return list;
+  }
+
+  function renderFilters() {
+    const all = R.workers();
+    const n = (k) => all.filter((w) => w.status === k).length;
+    const chips = [["all", "All", null, all.length], ["act", "Act now", "var(--coral)", n("act")],
+                   ["rising", "Rising", "var(--sun)", n("rising")], ["steady", "Steady", "var(--sage)", n("steady")]];
+    R.setHTML(document.getElementById("filters"), chips.map(([k, label, color, count]) =>
+      `<button type="button" class="fchip" data-filter="${k}" data-key="f-${k}" aria-pressed="${filter === k}">
+        ${color ? `<i style="background:${color}"></i>` : ""}${label} <span class="n">${count}</span></button>`).join(""));
+  }
+
+  function renderRoster() {
+    const list = visibleWorkers();
+    R.setHTML(document.getElementById("roster"), list.length ? list.map((w) => {
+      const t = trailOf(w.worker_id);
+      const share = riskShare(w.worker_id);
+      const low = (w.battery_pct ?? 100) < 20;
+      return `<button type="button" class="wcard ${w.status}" data-worker-pick="${esc(w.worker_id)}" data-key="w-${esc(w.worker_id)}" aria-pressed="${selected === w.worker_id}">
+        <div class="wtop"><div><div class="wid">${esc(w.worker_id)}</div><div class="wmeta">${esc(w.job)} · ${esc(w.site)} · Zone ${esc(w.zone || "?")}</div></div>${R.statusHTML(w.status)}</div>
+        <div class="wvitals"><span><b>${w.avg_heart_rate_bpm}</b> bpm</span><span><b>${w.avg_skin_temp_c.toFixed(1)}</b> °C</span></div>
+        <div class="wfc">${esc(forecastText(w))}</div>
+        ${sparkline(t.map((p) => p[1]), w.status === "act" ? "#ee5a4b" : w.status === "rising" ? "#e8862a" : "#6fa37b")}
+        <div class="wfoot"><span>At risk today: <b>${todayOf(w.worker_id) ? Math.round(share * 100) + "%" : "–"}</b></span><span>☀ ${w.battery_pct ?? "?"}%</span></div>
+        ${w.sos_pressed_at ? '<span class="flag flag-sos">SOS</span>' : ""}${w.on_break ? '<span class="flag flag-break">On shade break</span>' : ""}${low ? '<span class="flag flag-low">Low battery</span>' : ""}
+      </button>`;
+    }).join("") : '<p class="empty">No workers match.</p>');
+  }
+
+  // ------------------------------------------------------------ detail
+  function lineChart(trail, idx, scale, color) {
+    if (trail.length < 2) return '<p class="hint">Collecting… (needs a couple of simulated minutes)</p>';
+    const vals = trail.map((p) => p[idx]);
+    const lo = Math.min(...vals, scale.yellow) - scale.pad, hi = Math.max(...vals, scale.red) + scale.pad;
+    const W = 400, H = 110;
+    const x = (i) => (i / (vals.length - 1)) * W;
+    const y = (v) => H - 6 - ((v - lo) / (hi - lo)) * (H - 12);
+    const line = vals.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+    return `<svg class="chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${esc(scale.name)} over the last ${trail.length} minutes">
+        <line x1="0" x2="${W}" y1="${y(scale.red)}" y2="${y(scale.red)}" stroke="#ee5a4b" stroke-dasharray="5 4" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
+        <line x1="0" x2="${W}" y1="${y(scale.yellow)}" y2="${y(scale.yellow)}" stroke="#f5a53c" stroke-dasharray="5 4" stroke-width="1.2" vector-effect="non-scaling-stroke"/>
+        <polyline points="${line}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
+      </svg>
+      <div class="chart-axis"><span>${esc(trail[0][0])}</span><span>${esc(scale.name)}: dashed lines at ${scale.yellow} and ${scale.red}${scale.unit}</span><span>${esc(trail[trail.length - 1][0])}</span></div>`;
+  }
+
+  function renderDetail() {
+    const box = document.getElementById("detail");
+    const all = (R.state.scores && R.state.scores.workers) || [];
+    const w = all.find((x) => x.worker_id === selected);
+    if (!w) { R.setHTML(box, '<p class="empty-detail">Select a worker to see their day.</p>'); return; }
+    const t = trailOf(w.worker_id);
+    const today = todayOf(w.worker_id);
+    const share = riskShare(w.worker_id);
+    const cases = ((R.state.agent && R.state.agent.cases) || []).filter((c) => c.worker_id === w.worker_id);
+    const events = R.actionsFor(w.worker_id).slice(0, 6);
+    const alertId = w.alert ? w.alert.alert_id : (w.sos_alert ? w.sos_alert.alert_id : null);
+    R.setHTML(box, `
+      ${R.statusHTML(w.status)}
+      <h2>${esc(w.worker_id)}</h2>
+      <div class="sub">${esc(crewLabel(w.job))} · ${esc(w.site)} · Zone ${esc(w.zone || "?")}</div>
+      <div class="vitals">
+        <div class="vit"><div class="k">Heart rate</div><div class="v">${w.avg_heart_rate_bpm} <small>bpm</small></div></div>
+        <div class="vit"><div class="k">Skin temp</div><div class="v">${w.avg_skin_temp_c.toFixed(1)} <small>°C</small></div></div>
+        <div class="vit"><div class="k">Activity</div><div class="v">${esc(w.activity_level)}</div></div>
+        <div class="vit"><div class="k">Site WBGT</div><div class="v">${w.wbgt_c.toFixed(1)} <small>°C</small></div></div>
+      </div>
+      <div><b>${esc(forecastText(w))}</b>${w.forecast ? ` <span class="hint">· AI ${Math.round(w.forecast.probability * 100)}% likely</span>` : ""}</div>
+      ${w.reasons.length ? `<ul class="list" style="margin-top:8px">${w.reasons.map((r) => `<li>${esc(r)}</li>`).join("")}</ul>` : ""}
+      ${R.state.viewOnly ? '<p class="hint" style="margin-top:14px">View-only link: actions are taken in the control room.</p>' : `
+      <div class="actions">
+        ${R.actionButton("dispatch_water", w.worker_id, alertId, "btn btn-primary btn-sm")}
+        ${R.actionButton("shade_break", w.worker_id, alertId, "btn btn-outline btn-sm")}
+        ${R.actionButton("buzz", w.worker_id, alertId, "btn btn-outline btn-sm")}
+      </div>`}
+
+      <div class="dsec"><h3>Heart rate · last ${t.length} min</h3>${lineChart(t, 1, { name: "Heart rate", yellow: 130, red: 155, unit: " bpm", pad: 6 }, "#ee5a4b")}</div>
+      <div class="dsec"><h3>Forehead temperature · last ${t.length} min</h3>${lineChart(t, 2, { name: "Skin temp", yellow: 35.5, red: 36.5, unit: " °C", pad: 0.3 }, "#e8862a")}</div>
+
+      <div class="dsec"><h3>Today</h3>
+        ${today ? `<div class="today">
+          <div><b>${Math.round(share * 100)}%</b>of shift time at risk</div>
+          <div><b>${today.alerts}</b>alert${today.alerts === 1 ? "" : "s"}${today.sos ? ` · ${today.sos} SOS` : ""}</div>
+          <div><b>${today.breaks} · ${today.water_runs}</b>shade breaks · water runs</div>
+        </div>
+        <div class="riskbar" title="${Math.round(share * 100)}% of ${today.minutes} minutes at rising or act-now risk"><i style="width:${share * 100}%"></i></div>
+        <p class="hint" style="margin:6px 0 0">${today.minutes} simulated minutes on shift so far.</p>` : '<p class="hint">Collecting…</p>'}
+      </div>
+
+      <div class="dsec"><h3>AI agent cases</h3>
+        ${cases.length ? `<ul class="list">${cases.map((c) => `<li><span class="t">${R.hhmm(c.opened_sim)}</span><span>
+          ${esc({ sos: "SOS help call", red: "Danger zone", predicted_red: "Predicted heat stress" }[c.kind] || c.kind)} ·
+          ${c.status === "open" ? "<b>open</b>" : c.reached_red ? "closed, reached danger zone" : "closed, caught early"} ·
+          <a href="/ai-agent.html#${esc(c.case_id)}">timeline</a></span></li>`).join("")}</ul>` : '<p class="hint">No cases for this worker yet.</p>'}
+      </div>
+
+      <div class="dsec"><h3>Recent events</h3>
+        ${events.length ? `<ul class="list">${events.map((e) => `<li><span class="t">${R.entryTime(e)}</span><span>${esc(R.entryLabel(e))}</span></li>`).join("")}</ul>` : '<p class="hint">Nothing yet.</p>'}
+      </div>
+
+      <div class="dsec"><h3>Helmet</h3>
+        <div class="helmet-row">${esc(w.helmet_id || "")} · gateway ${esc(w.gateway || "?")} · ☀ ${w.battery_pct ?? "?"}% solar battery · last reading ${R.hhmmss(w.sim_time)}</div>
+      </div>`);
+  }
+
+  function render() {
+    if (!R.state.scores) return;
+    const workers = R.workers();
+    const act = workers.filter((w) => w.status === "act").length;
+    document.getElementById("headline").textContent =
+      `${workers.length} workers on shift. ` + (act ? `${R.numberWord(act)} ${act === 1 ? "needs" : "need"} you now.` : "Nobody needs you right now.");
+    R.setHTML(document.getElementById("eyebrow"),
+      `${esc(R.state.site === "all" ? "All sites" : R.state.site)} · simulated helmets · tap a worker for their day` +
+      (R.statusWarn ? ` · <span class="warn">${esc(R.statusText)}</span>` : ""));
+    if (!selected && workers.length) selected = [...workers].sort((a, b) => R.STATUS[a.status].rank - R.STATUS[b.status].rank)[0].worker_id;
+    renderFilters();
+    renderRoster();
+    renderDetail();
+  }
+
+  document.addEventListener("click", (e) => {
+    const f = e.target.closest("[data-filter]");
+    if (f) { filter = f.dataset.filter; render(); }
+    const pick = e.target.closest("[data-worker-pick]");
+    if (pick) {
+      selected = pick.dataset.workerPick;
+      history.replaceState(null, "", `#${selected}`);
+      render();
+      if (window.matchMedia("(max-width: 1050px)").matches) document.getElementById("detail").scrollIntoView({ behavior: R.REDUCE_MOTION ? "auto" : "smooth" });
+    }
+  });
+  document.getElementById("search").addEventListener("input", render);
+  document.getElementById("sort").addEventListener("change", render);
+  window.addEventListener("hashchange", () => { selected = location.hash.replace("#", "") || selected; render(); });
+
+  R.init({ page: "workers", arc: false, onData: () => { render(); fetchInsights(); } });
+})();
+</script>
+</body>
+</html>

@@ -44,6 +44,11 @@ class ShiftStats:
         self.red_alerts = 0
         self.interventions = 0
         self.site_of = {}
+        self.per_worker = defaultdict(lambda: [0, 0])  # worker -> [minutes on shift, minutes at risk]
+        self.worker_alerts = Counter()
+        self.worker_breaks = Counter()
+        self.worker_water = Counter()
+        self.worker_sos = Counter()
         self.first_sim = None
         self.last_sim = None
 
@@ -61,7 +66,8 @@ class ShiftStats:
                 continue   # one sample per worker per simulated minute
             self.last_minute[wid] = minute
             risky = w["status"] in AT_RISK
-            for table, key in ((self.cells, (w["site"], hour)), (self.jobs, (w["site"], w["job"]))):
+            for table, key in ((self.cells, (w["site"], hour)), (self.jobs, (w["site"], w["job"])),
+                               (self.per_worker, wid)):
                 table[key][0] += 1
                 table[key][1] += int(risky)
             if risky:
@@ -80,6 +86,15 @@ class ShiftStats:
         except ValueError:
             hour = self.last_sim.hour if self.last_sim else None
         kind, etype = entry.get("kind"), entry.get("type")
+        wid = entry.get("worker_id")
+        if etype in ("alert", "sos") and wid:
+            self.worker_alerts[wid] += 1
+            if etype == "sos":
+                self.worker_sos[wid] += 1
+        if wid and entry.get("action") in ("water", "dispatch_water"):
+            self.worker_water[wid] += 1
+        if wid and entry.get("action") in ("short_break", "shade_break"):
+            self.worker_breaks[wid] += 1
         if etype == "alert":
             self.alerts_by_hour[hour] += 1
             if kind == "predicted_red":
@@ -205,6 +220,11 @@ class ShiftStats:
                 "at_risk_share": round(self.risk_total / max(1, sum(c[0] for c in self.cells.values())), 3),
             },
             "recommendations": self.recommendations(),
+            # Per-worker shift totals (for the Workers page).
+            "workers": {wid: {"minutes": m, "at_risk_minutes": r, "alerts": self.worker_alerts[wid],
+                              "sos": self.worker_sos[wid], "breaks": self.worker_breaks[wid],
+                              "water_runs": self.worker_water[wid]}
+                        for wid, (m, r) in self.per_worker.items()},
         }
 
     def write(self):

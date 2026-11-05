@@ -136,8 +136,10 @@
 (function () {
   const R = window.Resilia;
   const { esc } = R;
-  let selectedCase = null;
-  let userPicked = false;
+  // A link like /ai-agent.html#C3 opens that case.
+  const fromHash = (location.hash || "").match(/^#(C\d+)$/);
+  let selectedCase = fromHash ? fromHash[1] : null;
+  let userPicked = !!fromHash;
 
   const inSite = (x) => R.state.site === "all" || x.site === R.state.site;
   const crewLabel = (job) => (job === "delivery rider" ? "delivery" : job);

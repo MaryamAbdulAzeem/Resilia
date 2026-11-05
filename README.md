@@ -10,7 +10,9 @@ using (simulated) Resilia smart helmets. Design mock-ups are in `designs/`.
 | `simulator.py` | Pretends to be 15 workers wearing Resilia helmets. Every 5 seconds each helmet sends heart rate, forehead skin temperature, activity, solar battery %, gateway, and occasionally an SOS button press. Has its own clock (summer air and sun follow the time of day). |
 | `risk_engine.py` | Reads the readings, gets live weather from Open-Meteo, estimates WBGT, rates each worker GREEN / YELLOW / RED and Steady / Rising / Act now, and raises heat and SOS alerts. |
 | `dashboard_server.py` | Small web server for the dashboard and its data. |
-| `dashboard/index.html` | Control room page (SOS banner, AI alert card, crew table, action log, map). |
+| `dashboard/index.html` | Home page (`/`): what Resilia does, a real caught-early case from this shift, live shift stats. |
+| `dashboard/control-room.html` | Control room page (SOS banner, AI alert card, crew table, action log, map). |
+| `dashboard/workers.html` | Workers page: roster with status filters, search and sort; each worker's vitals, 40-min trend, day totals, agent cases and actions (link to one with `/workers.html#W08`). |
 | `dashboard/ai-agent.html` | AI agent page: live case timeline, approvals (Approve / Override), automatic vs ask-first rules. |
 | `dashboard/insights.html` | Insights page: heat-map by site and hour, risk by job, alerts vs interventions, recommendations. |
 | `dashboard/about.html` | About page: the helmet, its three states (with live counts), and how it connects (with live numbers). |

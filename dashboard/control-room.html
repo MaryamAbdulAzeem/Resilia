@@ -490,6 +490,7 @@
             ${R.actionButton("shade_break", w.worker_id, w.alert ? w.alert.alert_id : null, "btn btn-outline btn-sm")}
             ${R.actionButton("buzz", w.worker_id, w.alert ? w.alert.alert_id : null, "btn btn-outline btn-sm")}
             <button type="button" class="btn btn-text btn-sm" data-locate="${esc(w.worker_id)}" data-key="loc2-${esc(w.worker_id)}">Show on map · Zone ${esc(w.zone || "?")}</button>
+            <a class="btn btn-text btn-sm" href="/workers.html#${esc(w.worker_id)}">Worker page →</a>
             <span class="hint">Helmet ${esc(w.helmet_id || "")} · ${esc(w.gateway || "")} · ${esc(w.site)}</span>
           </div></td></tr>`;
       }
