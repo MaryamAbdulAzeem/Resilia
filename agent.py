@@ -308,7 +308,7 @@ class Agent:
                        f"Model confidence {round((f.get('probability') or alert.get('probability') or 0) * 100)}%. "
                        f"Site WBGT {w['wbgt_c']:.1f} °C is {above} the {w['wbgt_limit']:.0f} °C limit for {w['activity_level']} work.",
                        alert_id=alert["alert_id"])
-            # Stepped response: if danger is still 6+ minutes away, buzz and send
+            # stepped response: if danger is still 6+ minutes away, buzz and send
             # water first; a shade break comes if it's close (<= 5 min) or the
             # worker actually reaches the danger zone.
             minutes = f.get("minutes", alert.get("minutes")) or 0
@@ -345,8 +345,8 @@ class Agent:
                            f"({w['avg_heart_rate_bpm']} bpm). Supervisor notified again; checking again in {CHECK_AFTER_MIN} min.")
                 case["check_due"] = iso(now + timedelta(minutes=CHECK_AFTER_MIN))
             else:
-                # Out of the danger window: note the progress. The case closes when
-                # the alert resolves (readings back to steady).
+                # out of the danger window: note the progress. 
+                # the case closes when the alert resolves (readings back to steady).
                 status = {"steady": "steady", "rising": "rising, but out of the danger window"}[w["status"]]
                 self._step(case, now, "check", "Checked the outcome",
                            f"Heart rate {'down to' if w['avg_heart_rate_bpm'] < case['start_hr'] else 'at'} "
