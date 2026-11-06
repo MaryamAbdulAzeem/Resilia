@@ -256,7 +256,12 @@ class ShiftStats:
         predicted = len(self.predicted_ids)
         escalated = len(self.escalated_ids & self.predicted_ids)
         unwarned = self.red_unwarned
-        # Episodes: AI-warning alerts, plus danger-zone alerts (forecast or not).
+        # Episodes = every distinct heat-risk event, counted once:
+        #   predicted  - AI warned early (it may or may not have reached the danger zone)
+        #   red_warned - danger-zone alert that the AI had forecast, but no separate warning alert opened
+        #   unwarned   - danger-zone alert with no forecast at all (a missed event)
+        # "Caught early" later subtracts the predicted ones that still escalated,
+        # so unwarned events lower the caught-early % rather than being hidden.
         episodes = predicted + self.red_warned + unwarned
         caught = predicted - escalated
         reached_despite_warning = escalated + self.red_warned
